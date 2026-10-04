@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  letter-spacing: -0.02em;
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background-color: #5C088C;
+  color: #ffffff;
+}
+
+.bottom-sheet {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.bottom-sheet.closed {
+  transform: translateY(100%);
+}
+
+.toast-anim {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
