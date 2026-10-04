@@ -1,6 +1,6 @@
 import { HttpResponse } from '@capacitor/core';
 import { HttpClient } from './httpClient';
-import { Course, AssignmentItem, LectureItem, NoticeItem, TodoListResult } from '../types';
+import { Course, AssignmentItem, LectureItem, NoticeItem, TodoListResult, MaterialItem } from '../types';
 import { LMS_BASE, USER_AGENT, LmsAuthService } from './lmsAuth';
 
 const MY_LECTURE_MNID = '201008840728';
@@ -318,8 +318,9 @@ export class LmsScraperService {
     const lectures: LectureItem[] = [];
     const quizzes: AssignmentItem[] = [];
     const notices: NoticeItem[] = [];
+    const materials: MaterialItem[] = [];
 
-    if (!html) return { assignments, lectures, quizzes, notices };
+    if (!html) return { assignments, lectures, quizzes, notices, materials };
 
     // 1. 브라우저/Capacitor 환경 DOMParser 지원 시
     if (typeof DOMParser !== 'undefined') {
@@ -424,6 +425,12 @@ export class LmsScraperService {
                 description: `종료 시한: ${dateStr}\n유형: ${isExam ? '시험' : '퀴즈'}`,
               });
             }
+          } else if (tabClass === 'tab4') {
+            // 자료실: 교수 업로드 강의자료 (알림 대상 아님)
+            const id = `${courseId}_material_${contentId || title}`;
+            if (!materials.some(item => item.id === id)) {
+              materials.push({ id, courseId, courseNm, title, dateStr });
+            }
           } else if (tabClass === 'tab9') {
             const id = `${courseId}_board_7_${contentId || title}`;
             if (!notices.some(item => item.id === id)) {
@@ -451,7 +458,13 @@ export class LmsScraperService {
     }
 
     // 2. Node.js 환경 또는 파서 미지원 시 정규식 Fallback
-    if (assignments.length === 0 && lectures.length === 0 && quizzes.length === 0 && notices.length === 0) {
+    if (
+      assignments.length === 0 &&
+      lectures.length === 0 &&
+      quizzes.length === 0 &&
+      notices.length === 0 &&
+      materials.length === 0
+    ) {
       const liRegex = /<li[^>]*class=[\"\x27][^\"\x27]*\b(tab\d+)\b[^\"\x27]*[\"\x27][^>]*>([\s\S]*?)<\/li>/g;
       let liMatch: RegExpExecArray | null;
 
@@ -548,6 +561,12 @@ export class LmsScraperService {
               description: `종료 시한: ${dateStr}\n유형: ${isExam ? '시험' : '퀴즈'}`,
             });
           }
+        } else if (tabClass === 'tab4') {
+          // 자료실: 교수 업로드 강의자료 (알림 대상 아님)
+          const id = `${courseId}_material_${contentId || title}`;
+          if (!materials.some(item => item.id === id)) {
+            materials.push({ id, courseId, courseNm, title, dateStr });
+          }
         } else if (tabClass === 'tab9') {
           const id = `${courseId}_board_7_${contentId || title}`;
           if (!notices.some(item => item.id === id)) {
@@ -571,7 +590,7 @@ export class LmsScraperService {
       }
     }
 
-    return { assignments, lectures, quizzes, notices };
+    return { assignments, lectures, quizzes, notices, materials };
   }
 
   /**

@@ -49,11 +49,41 @@ export interface NoticeItem {
   attachments: string[];
 }
 
+export interface MaterialItem {
+  id: string;
+  courseId: string;
+  courseNm: string;
+  title: string;
+  dateStr: string; // 게시 기한 원문 (예: "(종료시한 : 2026.08.22 17:00:00)")
+}
+
 export interface TodoListResult {
   assignments: AssignmentItem[];
   lectures: LectureItem[];
   quizzes: AssignmentItem[];
   notices: NoticeItem[];
+  materials?: MaterialItem[]; // 자료실 (doTodoList tab4)
+}
+
+export type HomeCardId =
+  | 'todayClasses'
+  | 'quickHub'
+  | 'summaryChips'
+  | 'deadlines'
+  | 'recentNotices'
+  | 'graduation'
+  | 'urgentNotice';
+
+export interface HomeCardSetting {
+  id: HomeCardId;
+  enabled: boolean;
+}
+
+export interface StudentProfile {
+  name: string;
+  studentNo: string;
+  dept: string;
+  gradeYear?: string; // 학년 (예: "2학년") — 종합정보 성적조회 output1
 }
 
 export interface UserConfig {
@@ -69,6 +99,11 @@ export interface UserConfig {
   rememberId?: boolean;
   useGeminiSummary?: boolean;
   backgroundSyncEnabled?: boolean;
+  newAssignmentAlert?: boolean; // 새 과제·퀴즈 알림
+  newNoticeAlert?: boolean; // 새 공지 알림
+  themeMode?: 'system' | 'light' | 'dark';
+  hideGrades?: boolean; // 성적 화면 평점 가리기
+  homeCards?: HomeCardSetting[]; // 홈 카드 순서 및 표시 여부
 }
 
 export interface GradeSubject {
@@ -98,6 +133,7 @@ export interface GradeSummary {
   totalGpa: number;
   totalPercentile?: number;
   semesters: SemesterGrade[];
+  student?: { name: string; gradeYear: string; major: string }; // 성적조회 output1 학적 정보
 }
 
 export interface TimetableItem {
@@ -163,6 +199,8 @@ export interface AppStateData {
   seenItemKeys: string[];
   sentReminders: Record<string, string[]>;
   readNoticeIds?: string[]; // 사용자가 열어봤거나 '모두 읽음' 처리한 공지 ID
+  materials?: MaterialItem[]; // LMS 자료실
+  profile?: StudentProfile; // LMS 세션 정보(이름·학번·학과) 캐시
   academicData?: AcademicData;
 }
 

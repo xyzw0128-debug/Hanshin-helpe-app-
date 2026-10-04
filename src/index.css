@@ -31,3 +31,9 @@ body {
 .toast-anim {
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* 동기화 진행 막대 (상단 얇은 막대가 좌→우로 반복 이동) */
+@keyframes syncbar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

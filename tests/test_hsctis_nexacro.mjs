@@ -2184,8 +2184,48 @@ console.log('\nTest 35: Debug log redaction...');
   console.log('  -> Test 35 Debug log redaction PASSED');
 }
 
+// -------------------------------------------------------------
+// Test 36: 자료실(tab4) 수집 + 홈 카드 설정 정리
+// -------------------------------------------------------------
+console.log('\nTest 36: Materials (tab4) parsing & home card normalization...');
+{
+  const { LmsScraperService } = await import('../src/services/lmsScraper.js');
+  const { normalizeHomeCards, DEFAULT_HOME_CARDS } = await import('../src/utils/homeCards.ts');
+
+  const harPath = '/home/lael/Downloads/hsackr/lms.hs.ac.kr_Archive [26-10-02 18-36-01].har';
+  if (fs.existsSync(harPath)) {
+    const entries = JSON.parse(fs.readFileSync(harPath, 'utf8')).log.entries.filter(e => e.request.url.includes('doTodoList'));
+    const allHtml = entries.find(e => e.request.postData.text.includes('=all')).response.content.text;
+    const todo = LmsScraperService.parseTodoListHtml(allHtml);
+    assert.strictEqual(todo.materials.length, 59, 'HAR 전체 목록의 자료실 59건');
+    assert.ok(todo.materials.some(m => m.title.includes('억지기법과 탐욕적전략')));
+    assert.ok(todo.materials.every(m => m.id.includes('_material_')));
+  }
+
+  // 기본 순서: 오늘 수업 → 퀵허브 → 요약 → 마감 임박 (나머지는 꺼짐)
+  assert.deepStrictEqual(
+    DEFAULT_HOME_CARDS.filter(c => c.enabled).map(c => c.id),
+    ['todayClasses', 'quickHub', 'summaryChips', 'deadlines']
+  );
+  // 저장된 순서 유지, 알 수 없는 카드 제거, 빠진 카드는 꺼진 채로 뒤에 추가
+  const normalized = normalizeHomeCards([
+    { id: 'deadlines', enabled: true },
+    { id: 'unknownCard', enabled: true },
+    { id: 'todayClasses', enabled: false },
+  ]);
+  assert.strictEqual(normalized[0].id, 'deadlines');
+  assert.strictEqual(normalized[1].id, 'todayClasses');
+  assert.strictEqual(normalized[1].enabled, false);
+  assert.ok(!normalized.some(c => c.id === 'unknownCard'));
+  assert.strictEqual(normalized.length, DEFAULT_HOME_CARDS.length);
+  assert.ok(normalized.slice(2).every(c => c.enabled === false));
+  assert.strictEqual(normalizeHomeCards(undefined).length, DEFAULT_HOME_CARDS.length);
+
+  console.log('  -> Test 36 Materials & home cards PASSED');
+}
+
 console.log('\n======================================================');
-console.log('🎉 ALL HSCTIS, NEXACRO, LMS NOTICES, TODOLIST, NOTIFICATIONS & DDAY TESTS PASSED! (35/35)');
+console.log('🎉 ALL HSCTIS, NEXACRO, LMS NOTICES, TODOLIST, NOTIFICATIONS & DDAY TESTS PASSED! (36/36)');
 console.log('======================================================\n');
 
 
