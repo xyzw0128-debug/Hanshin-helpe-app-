@@ -15,7 +15,7 @@ const isSessionExpiredError = (e: any): boolean =>
 /**
  * 과제/퀴즈 마감 예약 알림 동기화 (과제 ID 기반 1:1 고정 알림 ID → 재동기화 시 덮어쓰기, 제출 시 취소)
  */
-async function syncDeadlineReminders(assignments: AssignmentItem[], cfg: UserConfig): Promise<void> {
+export async function syncDeadlineReminders(assignments: AssignmentItem[], cfg: UserConfig): Promise<void> {
   const nowMs = Date.now();
   for (const a of assignments) {
     const dayKey = `${a.id}_reminder_d1`;
@@ -145,7 +145,10 @@ export function useLmsSync(
         lectures: [],
         quizzes: [],
         notices: [],
+        materials: [],
       };
+      // 자료실: 조회 실패 시 이전 목록 유지
+      const allMaterials = todoFailed ? activeState.materials || [] : todo.materials || [];
 
       // 과목 공식 명칭 맵 생성 및 수집된 데이터에 공식 과목명 정합성 부여
       const courseMap = new Map<string, string>();
@@ -154,7 +157,7 @@ export function useLmsSync(
           courseMap.set(c.course_id, c.course_nm);
         }
       }
-      for (const item of [...todo.assignments, ...todo.quizzes, ...todo.lectures, ...todo.notices]) {
+      for (const item of [...todo.assignments, ...todo.quizzes, ...todo.lectures, ...todo.notices, ...(todo.materials || [])]) {
         const canonicalNm = courseMap.get(item.courseId);
         if (canonicalNm) {
           item.courseNm = canonicalNm;
@@ -325,12 +328,15 @@ export function useLmsSync(
 
       for (const a of allAssignments) {
         newKeys.push(a.id);
-        if (hasHistory && !prevKeys.has(a.id) && !a.isSubmitted) {
-          NotificationService.sendLocalNotification(
-            `📝 [${a.courseNm}] 새 과제 등록!`,
-            `${a.title}\n기한: ${a.deadlineStr}`,
-            a.id
-          );
+        // 새 과제 알림 설정이 기준, 휴대폰 푸시는 푸시 알림 설정까지 켜져 있을 때만
+        if (hasHistory && !prevKeys.has(a.id) && !a.isSubmitted && activeCfg.newAssignmentAlert !== false) {
+          if (activeCfg.pushNotificationsEnabled !== false) {
+            NotificationService.sendLocalNotification(
+              `📝 [${a.courseNm}] 새 과제 등록!`,
+              `${a.title}\n기한: ${a.deadlineStr}`,
+              a.id
+            );
+          }
           if (activeCfg.discordWebhookUrl) {
             NotificationService.sendDiscordWebhook(
               activeCfg.discordWebhookUrl,
@@ -342,13 +348,15 @@ export function useLmsSync(
 
       for (const n of allNotices) {
         newKeys.push(n.id);
-        if (hasHistory && !prevKeys.has(n.id)) {
+        if (hasHistory && !prevKeys.has(n.id) && activeCfg.newNoticeAlert !== false) {
           const prefix = n.isUrgent ? '🚨 긴급: ' : '📢 ';
-          NotificationService.sendLocalNotification(
-            `${prefix}[${n.courseNm}] 새 공지사항`,
-            `${n.title}\n${n.summaryLines[0] || ''}`,
-            n.id
-          );
+          if (activeCfg.pushNotificationsEnabled !== false) {
+            NotificationService.sendLocalNotification(
+              `${prefix}[${n.courseNm}] 새 공지사항`,
+              `${n.title}\n${n.summaryLines[0] || ''}`,
+              n.id
+            );
+          }
           if (activeCfg.discordWebhookUrl) {
             const safeCourse = sanitizeDiscordText(n.courseNm);
             const safeTitle = sanitizeDiscordText(n.title);
@@ -371,6 +379,13 @@ export function useLmsSync(
       const updatedState: AppStateData = {
         ...activeState,
         readNoticeIds: latestReadIds.filter(id => noticeIdSet.has(id)),
+        materials: allMaterials,
+        profile: {
+          ...(activeState.profile || {}),
+          name: LmsAuthService.getUserName() || activeState.profile?.name || '',
+          studentNo: LmsAuthService.getUserNo() || activeState.profile?.studentNo || activeCfg.userId,
+          dept: LmsAuthService.getDeptName() || activeState.profile?.dept || '',
+        },
         lastSyncTime: timeStr,
         courses,
         assignments: allAssignments,

@@ -23,6 +23,10 @@ export const DEFAULT_CONFIG: UserConfig = {
   rememberId: true,
   useGeminiSummary: true,
   backgroundSyncEnabled: true,
+  newAssignmentAlert: true,
+  newNoticeAlert: true,
+  themeMode: 'system',
+  hideGrades: true,
 };
 
 export const DEFAULT_STATE: AppStateData = {

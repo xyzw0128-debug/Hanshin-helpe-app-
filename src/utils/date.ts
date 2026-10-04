@@ -26,3 +26,28 @@ export function parseNoticeDate(dateStr: string): number {
 
   return new Date(year, month - 1, day, hour, min, sec).getTime();
 }
+
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+/**
+ * 홈 헤더용 오늘 날짜 (예: "10월 4일 토요일")
+ */
+export function formatTodayLabel(now: Date = new Date()): string {
+  return `${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAYS[now.getDay()]}요일`;
+}
+
+/**
+ * 마감까지 남은 기간 배지 (동기화 시점이 아닌 현재 시각 기준으로 계산)
+ * 오늘 마감 → "오늘 23:59", 그 외 → 달력 날짜 기준 "D-n"
+ */
+export function formatDeadlineBadge(deadlineMs: number, now: Date = new Date()): { text: string; urgent: boolean } {
+  const deadline = new Date(deadlineMs);
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOfDay(deadline) - startOfDay(now)) / 86_400_000);
+  if (days <= 0) {
+    const hh = String(deadline.getHours()).padStart(2, '0');
+    const mm = String(deadline.getMinutes()).padStart(2, '0');
+    return { text: `오늘 ${hh}:${mm}`, urgent: true };
+  }
+  return { text: `D-${days}`, urgent: days <= 1 };
+}

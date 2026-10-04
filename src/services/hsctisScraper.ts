@@ -725,7 +725,18 @@ export class HsctisScraperService {
       totalGpa = totalGpaCredits > 0 ? Number((totalGpaPoints / totalGpaCredits).toFixed(2)) : 0;
     }
 
+    // 학적 정보 (output1: STD_NM, GRADE_GBCD "2학년", SBJT_CD "AI·SW학")
+    const infoRow = (result.datasets['output1'] || []).find(r => r['GRADE_GBCD'] || r['SBJT_CD']);
+    const student = infoRow
+      ? {
+          name: unescapeXml(infoRow['STD_NM'] || '').trim(),
+          gradeYear: unescapeXml(infoRow['GRADE_GBCD'] || '').trim(),
+          major: unescapeXml(infoRow['SBJT_CD'] || '').trim(),
+        }
+      : undefined;
+
     return {
+      student,
       totalAppliedCredits,
       totalAcquiredCredits,
       totalGpa,

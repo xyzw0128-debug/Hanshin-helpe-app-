@@ -12,14 +12,20 @@ import {
   TrendingUp,
   Clock,
   X,
+  EyeOff,
 } from 'lucide-react';
 import { AcademicData, SemesterGrade, TimetableItem } from '../types';
 import { getSubjectColorIndex, PERIOD_TIMES } from '../services/hsctisScraper';
+
+export type AcademicSection = 'timetable' | 'graduation' | 'grades';
 
 interface AcademicViewProps {
   academicData?: AcademicData;
   isLoading: boolean;
   onRefresh: () => void;
+  section: AcademicSection;
+  onSectionChange: (section: AcademicSection) => void;
+  hideGrades?: boolean; // 성적 화면 평점 가리기 (눌러야 표시)
 }
 
 export interface TimetablePaletteColor {
@@ -259,8 +265,14 @@ export const AcademicView: React.FC<AcademicViewProps> = ({
   academicData,
   isLoading,
   onRefresh,
+  section,
+  onSectionChange,
+  hideGrades,
 }) => {
-  const [activeSection, setActiveSection] = useState<'grades' | 'timetable' | 'graduation'>('timetable');
+  const activeSection = section;
+  const setActiveSection = onSectionChange;
+  const [gradesRevealed, setGradesRevealed] = useState(false);
+  const gradesHidden = hideGrades !== false && !gradesRevealed;
   const [timetableViewMode, setTimetableViewMode] = useState<'grid' | 'daily'>('grid');
   const [expandedSemester, setExpandedSemester] = useState<string | null>(() => {
     return academicData?.gradeSummary?.semesters[0]
@@ -374,18 +386,6 @@ export const AcademicView: React.FC<AcademicViewProps> = ({
   if (!academicData || (!gradeSummary && timetable.length === 0)) {
     return (
       <div className="space-y-4 pb-6">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-hs-700 dark:bg-hs-600 text-white flex items-center justify-center shadow-sm">
-              <GraduationCap className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-sm font-black text-zinc-900 dark:text-white">학사 / 종합정보</h2>
-              <p className="text-[10px] text-zinc-500 dark:text-zinc-400">데이터 동기화 대기 중</p>
-            </div>
-          </div>
-        </div>
-
         <div className="p-6 bg-white dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-3xl text-center shadow-sm space-y-3.5">
           <div className="w-14 h-14 rounded-2xl bg-hs-50 dark:bg-hs-950/60 text-hs-700 dark:text-hs-300 flex items-center justify-center mx-auto shadow-inner">
             <Award className="w-7 h-7" />
@@ -411,89 +411,56 @@ export const AcademicView: React.FC<AcademicViewProps> = ({
 
   return (
     <div className="space-y-3.5 pb-6">
-      {/* 탭 헤더 및 동기화 버튼 */}
-      <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-hs-700 dark:bg-hs-600 text-white flex items-center justify-center shadow-sm">
-            <GraduationCap className="w-4 h-4" />
+      {/* 상단: 서브탭 + 학사 새로고침 (탭 제목 줄 없이 서브탭이 곧 상단) */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-1.5">
+          <div className="flex-1 flex p-1 bg-zinc-200/80 dark:bg-zinc-900 rounded-2xl text-xs font-bold">
+            {(
+              [
+                ['timetable', '시간표'],
+                ['graduation', '졸업 학점'],
+                ['grades', '성적'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setActiveSection(id)}
+                className={`flex-1 py-2 text-center rounded-xl transition-all ${
+                  activeSection === id
+                    ? 'bg-white dark:bg-zinc-800 text-hs-700 dark:text-hs-300 shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-          <div>
-            <h2 className="text-sm font-black text-zinc-900 dark:text-white">
-              학사 / 종합정보
-            </h2>
-            <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
-              최종 갱신: {academicData?.lastUpdated || '대기 중'}
-            </p>
-          </div>
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="p-2 rounded-xl text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-zinc-800 disabled:opacity-60"
+            aria-label="학사 새로고침"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
-
-        <button
-          onClick={onRefresh}
-          disabled={isLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-hs-50 hover:bg-hs-100 dark:bg-hs-950/50 dark:hover:bg-hs-900/60 text-hs-700 dark:text-hs-300 text-xs font-bold rounded-xl border border-hs-200 dark:border-hs-800 transition-all active:scale-95 disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          <span>동기화</span>
-        </button>
+        <p className="text-[10px] text-zinc-400 text-right px-1">최종 갱신 {academicData?.lastUpdated || '-'}</p>
       </div>
 
-      {/* 상단 졸업 학점 달성률 게이지 (성적 대신 노출하여 타인 시선에 민감한 정보 보호) */}
-      {graduation && (
+      {/* 성적 가리기: 눌러야 평점 표시 */}
+      {activeSection === 'grades' && gradesHidden && (
         <button
-          onClick={() => setActiveSection('graduation')}
-          className="w-full px-3.5 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-2xl shadow-sm text-left space-y-1.5"
+          onClick={() => setGradesRevealed(true)}
+          className="w-full p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm text-center space-y-1"
         >
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-black text-zinc-800 dark:text-zinc-100">졸업 학점 달성률</span>
-            <span className="font-bold text-hs-700 dark:text-hs-300">
-              {graduation.totalAcquiredCredits}/{graduation.totalRequiredCredits}학점 · {graduation.completionPercent}%
-            </span>
-          </div>
-          <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2 rounded-full overflow-hidden">
-            <div
-              className="bg-gradient-to-r from-hs-600 to-emerald-500 h-full rounded-full"
-              style={{ width: `${Math.min(100, graduation.completionPercent)}%` }}
-            />
-          </div>
+          <EyeOff className="w-6 h-6 mx-auto text-zinc-400" />
+          <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">성적이 가려져 있습니다</p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">눌러서 보기 · 설정에서 끌 수 있습니다</p>
         </button>
       )}
 
-      {/* 서브 네비게이션 필터 (시간표 / 성적 / 졸업) */}
-      <div className="flex p-1 bg-zinc-200/80 dark:bg-zinc-900 rounded-xl text-xs font-bold">
-        <button
-          onClick={() => setActiveSection('timetable')}
-          className={`flex-1 py-1.5 text-center rounded-lg transition-all ${
-            activeSection === 'timetable'
-              ? 'bg-white dark:bg-zinc-800 text-hs-700 dark:text-hs-300 shadow-sm'
-              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
-          }`}
-        >
-          75분 시간표
-        </button>
-        <button
-          onClick={() => setActiveSection('grades')}
-          className={`flex-1 py-1.5 text-center rounded-lg transition-all ${
-            activeSection === 'grades'
-              ? 'bg-white dark:bg-zinc-800 text-hs-700 dark:text-hs-300 shadow-sm'
-              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
-          }`}
-        >
-          성적·평점
-        </button>
-        <button
-          onClick={() => setActiveSection('graduation')}
-          className={`flex-1 py-1.5 text-center rounded-lg transition-all ${
-            activeSection === 'graduation'
-              ? 'bg-white dark:bg-zinc-800 text-hs-700 dark:text-hs-300 shadow-sm'
-              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
-          }`}
-        >
-          졸업 학점
-        </button>
-      </div>
-
       {/* [1. 성적/평점 섹션] */}
-      {activeSection === 'grades' && (
+      {activeSection === 'grades' && !gradesHidden && (
         <div className="space-y-3.5">
           {/* 전체 GPA 요약 카드 */}
           {gradeSummary && (
