@@ -27,6 +27,7 @@ export const DEFAULT_CONFIG: UserConfig = {
   newNoticeAlert: true,
   themeMode: 'system',
   hideGrades: true,
+  protectPcSession: true,
 };
 
 export const DEFAULT_STATE: AppStateData = {

@@ -1,9 +1,10 @@
 {
   "name": "lms-notifier-app",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
+    "build:release": "bash scripts/build-release.sh",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",

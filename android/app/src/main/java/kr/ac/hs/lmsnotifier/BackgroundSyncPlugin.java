@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import androidx.work.Constraints;
 import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
@@ -47,13 +48,19 @@ public class BackgroundSyncPlugin extends Plugin {
         WorkManager wm = WorkManager.getInstance(context);
         if (!enabled || intervalMinutes <= 0) {
             wm.cancelUniqueWork(UNIQUE_WORK_NAME);
+            wm.cancelUniqueWork(BackgroundSyncWorker.TEST_WORK_NAME);
             prefs.edit()
                     .remove(BackgroundSyncWorker.PREF_SEEN_ITEM_IDS)
                     .putBoolean(BackgroundSyncWorker.PREF_HAS_SEEDED, false)
                     .apply();
+        } else if (BackgroundSyncWorker.isTestInterval(context, intervalMinutes)) {
+            // 디버그 빌드 테스트 모드: 주기 작업 대신 n분 뒤 1회 실행을 워커가 계속 이어서 예약
+            wm.cancelUniqueWork(UNIQUE_WORK_NAME);
+            BackgroundSyncWorker.scheduleTestRun(context, intervalMinutes, ExistingWorkPolicy.REPLACE);
         } else {
-            // Android WorkManager 최소 허용 주기: 15분
-            long interval = Math.max(15, intervalMinutes);
+            wm.cancelUniqueWork(BackgroundSyncWorker.TEST_WORK_NAME);
+            // Android WorkManager 최소 허용 주기: 15분 (릴리스 빌드에서 15분 미만 값이 와도 15분으로)
+            long interval = Math.max(BackgroundSyncWorker.MIN_PERIODIC_MINUTES, intervalMinutes);
 
             Constraints constraints = new Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -92,7 +99,12 @@ public class BackgroundSyncPlugin extends Plugin {
         String cookie = CookieManager.getInstance().getCookie(BackgroundSyncWorker.LMS_BASE);
         boolean saved = cookie != null && cookie.contains("JSESSIONID");
         if (saved) {
-            prefs.edit().putString(BackgroundSyncWorker.PREF_SESSION_COOKIE, cookie).apply();
+            // 로그인·동기화 성공 직후에만 호출되므로 세션 정상 시각도 기록하고, 동기화 멈춤 알림을 해제
+            prefs.edit()
+                    .putString(BackgroundSyncWorker.PREF_SESSION_COOKIE, cookie)
+                    .putLong(BackgroundSyncWorker.PREF_SESSION_OK_AT, System.currentTimeMillis())
+                    .apply();
+            BackgroundSyncWorker.clearSyncStopped(getContext(), prefs);
         }
         DebugLog.log(getContext(), "plugin", "saveSession saved=" + saved);
         JSObject ret = new JSObject();
@@ -125,6 +137,8 @@ public class BackgroundSyncPlugin extends Plugin {
                 + ", savedCopy=" + (saved != null && saved.contains("JSESSIONID")) + ")");
         JSObject ret = new JSObject();
         ret.put("restored", restored);
+        // 복원했든 원래 있었든 세션 쿠키가 있는지 (없으면 끊긴 세션이 아니라 처음부터 세션이 없는 상태)
+        ret.put("hasCookie", restored || (current != null && current.contains("JSESSIONID")));
         call.resolve(ret);
     }
 
@@ -185,8 +199,31 @@ public class BackgroundSyncPlugin extends Plugin {
     public void getDebugLog(PluginCall call) {
         JSObject ret = new JSObject();
         ret.put("enabled", DebugLog.isEnabled(getContext()));
+        ret.put("debugBuild", DebugLog.isDebugBuild(getContext()));
         ret.put("log", DebugLog.read(getContext()));
         call.resolve(ret);
+    }
+
+    /**
+     * 배포 앱의 "문제 신고용 로그" 켜기/끄기 (디버그 빌드는 항상 켜짐)
+     */
+    @PluginMethod
+    public void setReportLog(PluginCall call) {
+        Boolean enabledObj = call.getBoolean("enabled");
+        DebugLog.setReportEnabled(getContext(), enabledObj != null && enabledObj);
+        JSObject ret = new JSObject();
+        ret.put("enabled", DebugLog.isEnabled(getContext()));
+        call.resolve(ret);
+    }
+
+    /**
+     * 앱이 "다른 PC 에서 로그인" 응답을 받았을 때 워커에도 기록 (멈춤 알림 문구와 재로그인 판단에 사용)
+     */
+    @PluginMethod
+    public void recordSessionKicked(PluginCall call) {
+        getContext().getSharedPreferences(BackgroundSyncWorker.PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putLong(BackgroundSyncWorker.PREF_SESSION_KICKED_AT, System.currentTimeMillis()).apply();
+        call.resolve();
     }
 
     @PluginMethod
@@ -232,6 +269,10 @@ public class BackgroundSyncPlugin extends Plugin {
         ret.put("lastStatus", lastStatus);
         ret.put("enabled", enabled);
         ret.put("intervalMinutes", intervalMinutes);
+        // 앱의 PC 세션 보호 판단(sessionGuard.ts)이 워커 기록도 함께 보도록 전달
+        ret.put("sessionOkAt", prefs.getLong(BackgroundSyncWorker.PREF_SESSION_OK_AT, 0L));
+        ret.put("sessionKickedAt", prefs.getLong(BackgroundSyncWorker.PREF_SESSION_KICKED_AT, 0L));
+        ret.put("sessionExpiredAt", prefs.getLong(BackgroundSyncWorker.PREF_SESSION_EXPIRED_AT, 0L));
         call.resolve(ret);
     }
 }

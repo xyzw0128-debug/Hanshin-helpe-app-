@@ -1,13 +1,24 @@
 import { useState, useRef, useCallback } from 'react';
 import { UserConfig, AppStateData, AssignmentItem, LectureItem, NoticeItem, Course, TodoListResult } from '../types';
-import { saveAppState, saveConfig } from '../services/storage';
-import { LmsAuthService, LmsAuthCredentialsError } from '../services/lmsAuth';
+import { saveAppState } from '../services/storage';
+import { LmsAuthService, isCredentialsError } from '../services/lmsAuth';
 import { LmsScraperService, isEmergencyNotice, parseLectureDeadline } from '../services/lmsScraper';
 import { summarizeNoticeWithGemini } from '../services/gemini';
 import { NotificationService, sanitizeDiscordText } from '../services/notifications';
 import { parseNoticeDate } from '../utils/date';
 import { getBackgroundSeenItems, markBackgroundItemsSeen, saveLmsSession } from '../services/backgroundSync';
 import { debugLog } from '../services/debugLog';
+import { canRelogin, SyncPausedError } from '../services/sessionGuard';
+
+/** 저장해 두는 "이미 본 항목" ID 상한. 현재 목록에 있는 항목은 항상 남기고 오래된 것부터 정리 */
+const MAX_SEEN_KEYS = 3000;
+
+export function mergeSeenKeys(prev: string[], current: string[]): string[] {
+  const currentSet = new Set(current);
+  const older = prev.filter(k => !currentSet.has(k));
+  const room = MAX_SEEN_KEYS - currentSet.size;
+  return [...(room > 0 ? older.slice(-room) : []), ...currentSet];
+}
 
 const isSessionExpiredError = (e: any): boolean =>
   !!(e?.message?.includes('세션 만료') || e?.message?.includes('로그인이 필요합니다'));
@@ -61,8 +72,9 @@ export function useLmsSync(
   state: AppStateData,
   setState: React.Dispatch<React.SetStateAction<AppStateData>>,
   setConfig: React.Dispatch<React.SetStateAction<UserConfig | null>>,
-  setActiveTab: React.Dispatch<React.SetStateAction<TabType>>,
-  showToast: (msg: string) => void
+  setActiveTab: (tab: TabType) => void,
+  showToast: (msg: string) => void,
+  onCredentialsRejected: (cfg: UserConfig) => void
 ): {
   isSyncing: boolean;
   performSync: (userCfg?: UserConfig, curState?: AppStateData, options?: SyncOptions) => Promise<void>;
@@ -93,8 +105,16 @@ export function useLmsSync(
     const syncStartedAt = Date.now();
     debugLog('sync', 'LMS 동기화 시작', { silent, forceLogin });
     try {
-      if (!silent) showToast('LMS 서버 로그인 중...');
-      await LmsAuthService.login(activeCfg.userId, activeCfg.userPw, forceLogin);
+      // 세션이 무효일 때만 SSO 재로그인. 다른 곳(PC) 로그인이 의심되면 재로그인하지 않음(PC 세션 보호)
+      const reloginGuard = { enabled: activeCfg.protectPcSession !== false, interactive: !silent };
+      const sessionState = forceLogin ? 'invalid' : await LmsAuthService.checkSession();
+      // 네트워크 오류(error)로 세션 상태를 모르면 로그인하지 않고 바로 조회한다.
+      // 세션이 살아 있는데 SSO 로그인을 하면 PC 세션을 끊으므로, 끊긴 게 확인될 때(아래 조회 실패)만 판단
+      if (sessionState === 'invalid') {
+        if (!forceLogin && !(await canRelogin(reloginGuard))) throw new SyncPausedError();
+        if (!silent) showToast('LMS 서버 로그인 중...');
+        await LmsAuthService.login(activeCfg.userId, activeCfg.userPw, true);
+      }
 
       // 1. 과목 목록, 포털 공지사항, 통합 할일(과제/인강/퀴즈/공지)을 단일 라운드트립으로 병렬 고속 호출
       let courses: Course[];
@@ -121,8 +141,9 @@ export function useLmsSync(
       } catch (fetchErr: any) {
         if (isSessionExpiredError(fetchErr)) {
           debugLog('sync', '조회 중 세션 만료 감지 → 재인증 후 재시도');
-          // 포그라운드 동기화 중 세션 만료 감지 시 무자각 자동 재인증(Silent Re-auth) 후 1회 재시도
+          // 방금 확인한 세션이 조회 중 끊김 → 다른 곳 로그인 가능성이 높으므로 재로그인 전에 확인
           LmsAuthService.invalidateSession();
+          if (!(await canRelogin(reloginGuard))) throw new SyncPausedError();
           await LmsAuthService.login(activeCfg.userId, activeCfg.userPw, true);
           [courses, portalNotices, todoData] = await Promise.all([
             LmsScraperService.getCourses(),
@@ -391,7 +412,7 @@ export function useLmsSync(
         assignments: allAssignments,
         lectures: allLectures,
         notices: allNotices,
-        seenItemKeys: Array.from(new Set([...(activeState.seenItemKeys || []), ...newKeys])),
+        seenItemKeys: mergeSeenKeys(activeState.seenItemKeys || [], newKeys),
       };
 
       // 화면에 즉시 렌더링 (체감 속도 1~2초 달성)
@@ -510,20 +531,16 @@ export function useLmsSync(
         })();
       }
     } catch (e: any) {
+      if (e instanceof SyncPausedError) {
+        debugLog('sync', '다른 곳 로그인 의심 → 재로그인 없이 동기화 중단', { silent });
+        if (!silent) showToast('다시 로그인하지 않았어요. 동기화가 멈춘 상태예요.');
+        return;
+      }
       debugLog('sync', 'LMS 동기화 실패', { error: e?.message || String(e), ms: Date.now() - syncStartedAt });
       console.error('Sync failed', e);
-      if (
-        e instanceof LmsAuthCredentialsError ||
-        e.name === 'LmsAuthCredentialsError' ||
-        (e.message && e.message.includes('비밀번호가 올바르지 않습니다'))
-      ) {
-        if (!silent) {
-          showToast('⚠️ 포털 비밀번호 오류: 계정 보호를 위해 동기화를 중지했습니다. [설정]을 확인해주세요.');
-        }
-        const safeCfg = { ...activeCfg, autoLogin: false, syncIntervalMinutes: 0 };
-        setConfig(safeCfg);
-        await saveConfig(safeCfg);
-        if (!silent) setActiveTab('menu');
+      if (isCredentialsError(e)) {
+        // 저장된 비밀번호로 더 시도하지 않도록(포털 계정 잠김 방지) 로그인 화면으로 돌려보냄
+        onCredentialsRejected(activeCfg);
       } else {
         if (!silent) {
           showToast(e.message || 'LMS 동기화에 실패했습니다.');
@@ -532,7 +549,7 @@ export function useLmsSync(
     } finally {
       setIsSyncing(false);
     }
-  }, [setIsSyncing, setState, setConfig, setActiveTab, showToast]);
+  }, [setIsSyncing, setState, setConfig, setActiveTab, showToast, onCredentialsRejected]);
 
   return { isSyncing, performSync };
 }

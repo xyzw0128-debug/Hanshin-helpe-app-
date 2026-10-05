@@ -103,6 +103,7 @@ export interface UserConfig {
   newNoticeAlert?: boolean; // 새 공지 알림
   themeMode?: 'system' | 'light' | 'dark';
   hideGrades?: boolean; // 성적 화면 평점 가리기
+  protectPcSession?: boolean; // 다른 곳(PC) 로그인 의심 시 재로그인·자동 동기화 멈춤
   homeCards?: HomeCardSetting[]; // 홈 카드 순서 및 표시 여부
 }
 

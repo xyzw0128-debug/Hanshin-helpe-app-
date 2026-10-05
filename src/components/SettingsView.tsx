@@ -3,6 +3,8 @@ import { Eye, EyeOff, RefreshCw, ChevronRight } from 'lucide-react';
 import { UserConfig } from '../types';
 import { NotificationService, isValidDiscordWebhookUrl } from '../services/notifications';
 import { getBackgroundSyncStatus, BackgroundSyncStatus } from '../services/backgroundSync';
+import { isDebugBuild } from '../services/debugLog';
+import { isReleaseBuild } from '../services/buildPolicy';
 import { Toggle } from './Toggle';
 
 interface SettingsViewProps {
@@ -69,6 +71,7 @@ const SecretInput: React.FC<{ value: string; onChange: (v: string) => void; plac
 };
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ config, onUpdate, onChangeAccount, onOpenHomeEdit }) => {
+  const release = isReleaseBuild();
   const [bgStatus, setBgStatus] = useState<BackgroundSyncStatus | null>(null);
   const refreshBgStatus = () => getBackgroundSyncStatus().then(setBgStatus);
   useEffect(() => {
@@ -168,6 +171,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ config, onUpdate, on
             disabled={!bgOn || !pushOn}
             className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-2.5 py-1.5 text-xs text-zinc-900 dark:text-white font-medium"
           >
+            {isDebugBuild() && <option value={1}>1분 (디버그 테스트)</option>}
             <option value={15}>15분</option>
             <option value={30}>30분</option>
             <option value={60}>1시간</option>
@@ -230,6 +234,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ config, onUpdate, on
         />
       </div>
 
+      {/* 계정·연동 섹션은 디버그 빌드에서만 (배포 앱: 계정 변경은 로그아웃 후 다시 로그인, 외부 연동 없음) */}
+      {!release && (
+        <>
       <SectionTitle>계정</SectionTitle>
       <div className={sectionClass}>
         <div className="px-4 py-3 space-y-2">
@@ -266,6 +273,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ config, onUpdate, on
           checked={autoLoginOn || config.rememberId !== false}
           onChange={v => onUpdate({ rememberId: v })}
           disabled={autoLoginOn}
+        />
+        <ToggleRow
+          title="PC 로그인 보호"
+          description="다른 곳에서 LMS에 로그인한 것 같으면 다시 로그인하지 않고 자동 동기화를 멈춤"
+          checked={config.protectPcSession !== false}
+          onChange={v => onUpdate({ protectPcSession: v })}
         />
       </div>
 
@@ -321,6 +334,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ config, onUpdate, on
           <p className="text-[11px] text-zinc-400">웹훅 주소가 유출되면 다른 사람이 채널에 메시지를 올릴 수 있으니 주의하세요.</p>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

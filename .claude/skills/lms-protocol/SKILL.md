@@ -23,6 +23,7 @@ user-invocable: false
 | 4-HSCTIS | `/cs/check/pre` → `/cs/init/user` | 세션 프리체크, `USER_ID` |
 
 - SSO 재로그인은 사용자의 PC 쪽 LMS 세션을 끊는다. `isSessionValid()`가 먼저 호출되는 구조를 유지할 것.
+- LMS는 계정당 세션 1개. 다른 곳 로그인으로 끊긴 JSESSIONID의 **첫 요청**에 서버가 `alert('다른 PC 에서 로그인 되었습니다.')` 페이지와 새 JSESSIONID를 준다(1회성, HAR 2026-10-04 확인). 이후 요청은 SSO `checkSession.do`로 302. 이 안내 페이지와 `alert('로그인 후 이용하실 수 있습니다.')` 페이지는 **EUC-KR**이라 앱(UTF-8)에서는 한글이 깨지므로 ASCII `alert('… PC …')`로 판별한다. 끊긴 세션도 `getSessionInfo`는 한동안 `user_no`를 돌려주므로 세션 확인만으로는 알 수 없다(기기 로그 2026-10-05 확인). 앱은 `sessionGuard.ts`(HttpClient에서 감지)와 `BackgroundSyncWorker`(`PREF_SESSION_KICKED_AT`)가 이를 기록해 재로그인을 멈춘다.
 - 비밀번호 오류는 `LmsAuthCredentialsError` / `HsctisAuthError`로 구분된다. 네트워크 오류와 섞지 말 것.
 
 ## 2. LMS 스크래핑 (`lmsScraper.ts`): HTML + 정규식
@@ -37,7 +38,8 @@ user-invocable: false
 
 - 대부분 `Referer` 헤더를 확인하므로 요청을 추가할 때 Referer를 빠뜨리지 말 것.
 - todo HTML: `<li class="tabN">` 항목, `fnGoContent(...)` 인자, `.subject`, `.lec_name`, `.date span`.
-- **`BackgroundSyncWorker.java`의 `parseTodoList`가 같은 HTML을 Java 정규식으로 따로 파싱한다.** 한쪽을 고치면 다른 쪽도 고칠 것.
+- **`TodoListParser.java`(백그라운드 워커)가 같은 HTML을 Java 정규식으로 따로 파싱한다.** 한쪽을 고치면 다른 쪽도 고칠 것. 앱은 기기에서 DOM `textContent`(엔티티 전체 디코딩)를 쓰므로 Java도 엔티티를 모두 디코딩해야 ID가 맞는다(`&middot;` 중복 알림 사례). Test 38이 검증.
+- `doTodoList`는 "내 강의" 메뉴(`doListView.dunet?mnid=201008840728`)를 거친 세션에서만 동작한다. 메뉴 진입 없이 바로 POST하면 세션이 정상이어도 HTTP 500 "잘못된 경로입니다"(기기 로그 2026-10-05). 워커는 메뉴 GET 후 POST하고, Referer에도 `mnid`를 넣는다.
 
 ## 3. HSCTIS (`nexacroClient.ts`, `hsctisScraper.ts`): 넥사크로 17 SSV
 

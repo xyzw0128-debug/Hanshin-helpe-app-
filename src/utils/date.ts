@@ -36,6 +36,14 @@ export function formatTodayLabel(now: Date = new Date()): string {
   return `${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAYS[now.getDay()]}요일`;
 }
 
+/** 마감 시각 표시: "10월 5일 (일) 23:59" */
+export function formatDeadlineDateTime(ms: number): string {
+  const d = new Date(ms);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAYS[d.getDay()]}) ${hh}:${mm}`;
+}
+
 /**
  * 마감까지 남은 기간 배지 (동기화 시점이 아닌 현재 시각 기준으로 계산)
  * 오늘 마감 → "오늘 23:59", 그 외 → 달력 날짜 기준 "D-n"
