@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useBackHandler } from '../services/backNav';
 import {
   GraduationCap,
   Award,
@@ -111,6 +112,8 @@ export const AcademicView: React.FC<AcademicViewProps> = ({
   ];
 
   const [selectedModalClass, setSelectedModalClass] = useState<MergedTimetableItem | null>(null);
+  // 시간표 상세 창은 뒤로가기로 닫힘
+  useBackHandler(!!selectedModalClass, () => setSelectedModalClass(null));
 
   // 요일별 연속 강의 병합 처리
   const mergedTimetableByDay = useMemo(() => {

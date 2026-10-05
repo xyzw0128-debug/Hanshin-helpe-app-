@@ -34,6 +34,37 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- 마감 하루 전·3시간 전 알림 (DeadlineReminders) -->
+        <receiver
+            android:name=".DeadlineReminderReceiver"
+            android:exported="false" />
+
+        <!-- 재부팅·앱 업데이트·시간 변경 뒤 마감 알림 다시 예약 -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 홈 화면 위젯 "다가오는 마감" -->
+        <receiver
+            android:name=".DeadlineWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_deadlines_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_deadlines_info" />
+        </receiver>
     </application>
 
     <!-- Android 11+ (API 30+) 패키지 가시성(Package Visibility) 허용 선언 -->
@@ -72,4 +103,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 마감 알림을 제시간에 (Android 14부터는 사용자가 허용해야 함, 없으면 몇 분 늦을 수 있음) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 설정의 "배터리 최적화 제외" 버튼: 백그라운드 확인이 절전 기능에 멈추지 않게 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 </manifest>

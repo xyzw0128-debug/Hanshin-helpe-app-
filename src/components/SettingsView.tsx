@@ -1,11 +1,47 @@
-import React, { useEffect, useState } from 'react';
-import { Eye, EyeOff, RefreshCw, ChevronRight } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Eye, EyeOff, RefreshCw, ChevronRight, CheckCircle2, AlertCircle } from 'lucide-react';
 import { UserConfig } from '../types';
 import { NotificationService, isValidDiscordWebhookUrl } from '../services/notifications';
 import { getBackgroundSyncStatus, BackgroundSyncStatus } from '../services/backgroundSync';
 import { isDebugBuild } from '../services/debugLog';
 import { isReleaseBuild } from '../services/buildPolicy';
 import { Toggle } from './Toggle';
+import {
+  getSystemStatus,
+  openBatterySettings,
+  openExactAlarmSettings,
+  openNotificationSettings,
+  SystemStatus,
+} from '../services/appShell';
+
+/** 알림이 늦거나 안 오는 원인 한 줄: 괜찮으면 체크, 아니면 설정 열기 버튼 */
+const CheckRow: React.FC<{ title: string; ok: boolean; okText: string; badText: string; action: string; onFix: () => void }> = ({
+  title,
+  ok,
+  okText,
+  badText,
+  action,
+  onFix,
+}) => (
+  <div className="flex items-center justify-between gap-3 px-4 py-3">
+    <div className="min-w-0 flex items-start gap-2">
+      {ok ? (
+        <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+      ) : (
+        <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+      )}
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{title}</div>
+        <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">{ok ? okText : badText}</div>
+      </div>
+    </div>
+    {!ok && (
+      <button onClick={onFix} className={smallButtonClass}>
+        {action}
+      </button>
+    )}
+  </div>
+);
 
 interface SettingsViewProps {
   config: UserConfig;
@@ -78,6 +114,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ config, onUpdate, on
     refreshBgStatus();
   }, [config.backgroundSyncEnabled, config.syncIntervalMinutes, config.pushNotificationsEnabled]);
 
+  // 알림 점검 (앱에서만). 설정 화면에 다녀오면 다시 확인
+  const [sysStatus, setSysStatus] = useState<SystemStatus | null>(null);
+  const recheckTimer = useRef<ReturnType<typeof setInterval>>();
+  useEffect(() => {
+    const refresh = () => getSystemStatus().then(setSysStatus);
+    refresh();
+    const onVisible = () => document.visibilityState === 'visible' && refresh();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(recheckTimer.current);
+    };
+  }, []);
+  // 배터리 최적화 허용 같은 확인 창은 앱 위에 겹쳐 떠서 화면 복귀 신호가 없음 → 누른 뒤 30초 동안 다시 확인
+  const fixAndRecheck = (open: () => Promise<unknown>) => {
+    open();
+    clearInterval(recheckTimer.current);
+    let n = 0;
+    recheckTimer.current = setInterval(() => {
+      getSystemStatus().then(setSysStatus);
+      if (++n >= 20) clearInterval(recheckTimer.current);
+    }, 1500);
+  };
+
   // 입력값(계정·키)은 저장 버튼을 눌러야 반영
   const [userId, setUserId] = useState(config.userId);
   const [userPw, setUserPw] = useState(config.userPw);
@@ -127,27 +187,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ config, onUpdate, on
           onChange={v => onUpdate({ pushNotificationsEnabled: v })}
         />
         <ToggleRow
-          title="새 과제·퀴즈 알림"
-          description="디스코드 웹훅 알림에도 적용"
+          title="새 과제·강의·퀴즈 알림"
+          description={release ? '새로 올라온 과제·온라인 강의·퀴즈' : '새로 올라온 과제·온라인 강의·퀴즈 (디스코드 웹훅에도 적용)'}
           checked={config.newAssignmentAlert !== false}
           onChange={v => onUpdate({ newAssignmentAlert: v })}
         />
         <ToggleRow
           title="새 공지 알림"
-          description="디스코드 웹훅 알림에도 적용"
+          description={release ? '과목 공지와 LMS 전체 공지' : '과목 공지와 LMS 전체 공지 (디스코드 웹훅에도 적용)'}
           checked={config.newNoticeAlert !== false}
           onChange={v => onUpdate({ newNoticeAlert: v })}
         />
         <ToggleRow
           title="마감 하루 전 알림"
-          description="미제출 과제·퀴즈 마감 24시간 전"
+          description="미제출 과제·퀴즈, 미수강 온라인 강의 마감 24시간 전"
           checked={config.ddayReminderEnabled !== false}
           onChange={v => onUpdate({ ddayReminderEnabled: v })}
           disabled={!pushOn}
         />
         <ToggleRow
           title="마감 3시간 전 알림"
-          description="미제출 과제·퀴즈 마감 직전"
+          description="화면이 꺼져 있어도 울려요"
           checked={config.threeHourReminderEnabled !== false}
           onChange={v => onUpdate({ threeHourReminderEnabled: v })}
           disabled={!pushOn}
@@ -158,7 +218,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ config, onUpdate, on
       <div className={sectionClass}>
         <ToggleRow
           title="앱이 꺼져 있을 때도 확인"
-          description="새 과제·강의·퀴즈를 주기적으로 확인해 알림 (푸시 알림이 켜져 있을 때만)"
+          description="새 과제·강의·퀴즈와 과목 공지를 주기적으로 확인하고, 제출을 마친 과제의 마감 알림은 지워요 (푸시 알림이 켜져 있을 때만)"
           checked={bgOn}
           onChange={v => onUpdate({ backgroundSyncEnabled: v })}
           disabled={!pushOn}
@@ -197,6 +257,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ config, onUpdate, on
           </p>
         </div>
       </div>
+
+      {sysStatus && pushOn && (
+        <>
+          <SectionTitle>알림이 늦거나 안 올 때</SectionTitle>
+          <div className={sectionClass}>
+            <CheckRow
+              title="알림 권한"
+              ok={sysStatus.notificationsEnabled}
+              okText="허용됨"
+              badText="휴대폰 설정에서 이 앱의 알림이 꺼져 있어요"
+              action="켜기"
+              onFix={() => fixAndRecheck(openNotificationSettings)}
+            />
+            <CheckRow
+              title="배터리 최적화 제외"
+              ok={sysStatus.ignoringBatteryOptimizations}
+              okText="제외됨: 앱이 꺼져 있어도 확인이 멈추지 않아요"
+              badText={
+                /samsung/i.test(sysStatus.manufacturer)
+                  ? "절전 기능이 백그라운드 확인을 멈출 수 있어요. 삼성은 '잠자는 앱'에서도 빼 주세요"
+                  : '절전 기능이 백그라운드 확인을 멈출 수 있어요'
+              }
+              action="제외하기"
+              onFix={() => fixAndRecheck(openBatterySettings)}
+            />
+            <CheckRow
+              title="정확한 시간에 알림"
+              ok={sysStatus.exactAlarmsAllowed}
+              okText="마감 알림이 제시간에 울려요"
+              badText="마감 알림이 몇 분 늦을 수 있어요"
+              action="허용하기"
+              onFix={() => fixAndRecheck(openExactAlarmSettings)}
+            />
+          </div>
+        </>
+      )}
 
       <SectionTitle>화면</SectionTitle>
       <div className={sectionClass}>

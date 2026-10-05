@@ -39,6 +39,7 @@ user-invocable: false
 - 대부분 `Referer` 헤더를 확인하므로 요청을 추가할 때 Referer를 빠뜨리지 말 것.
 - todo HTML: `<li class="tabN">` 항목, `fnGoContent(...)` 인자, `.subject`, `.lec_name`, `.date span`.
 - **`TodoListParser.java`(백그라운드 워커)가 같은 HTML을 Java 정규식으로 따로 파싱한다.** 한쪽을 고치면 다른 쪽도 고칠 것. 앱은 기기에서 DOM `textContent`(엔티티 전체 디코딩)를 쓰므로 Java도 엔티티를 모두 디코딩해야 ID가 맞는다(`&middot;` 중복 알림 사례). Test 38이 검증.
+- `to_do_type`별 내용 (HAR 2026-10-02): `proceedable`(기간 내 미완료) = 과제·강의·자료, `complete`(완료) = 제출한 과제·들은 강의·**과목 공지(tab9)**, `incomplete` = 기한이 지난 미완료, `all` = 전부(아직 열리지 않은 강의 포함). 과목 공지는 `proceedable`에 없으므로 워커는 `complete`도 받아 새 공지와 제출 완료(마감 알림 취소)를 확인한다.
 - `doTodoList`는 "내 강의" 메뉴(`doListView.dunet?mnid=201008840728`)를 거친 세션에서만 동작한다. 메뉴 진입 없이 바로 POST하면 세션이 정상이어도 HTTP 500 "잘못된 경로입니다"(기기 로그 2026-10-05). 워커는 메뉴 GET 후 POST하고, Referer에도 `mnid`를 넣는다.
 
 ## 3. HSCTIS (`nexacroClient.ts`, `hsctisScraper.ts`): 넥사크로 17 SSV
