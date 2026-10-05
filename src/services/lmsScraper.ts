@@ -2,6 +2,8 @@ import { HttpResponse } from '@capacitor/core';
 import { HttpClient } from './httpClient';
 import { Course, AssignmentItem, LectureItem, NoticeItem, TodoListResult, MaterialItem } from '../types';
 import { LMS_BASE, USER_AGENT, LmsAuthService } from './lmsAuth';
+import { debugLog } from './debugLog';
+import { isKickedResponse } from './sessionGuard';
 
 const MY_LECTURE_MNID = '201008840728';
 const CLASSROOM_MNID = '201008254671';
@@ -25,6 +27,59 @@ export function cleanText(s: string): string {
     .replace(/\(\s*학습시간\/기준시간\s*:\s*/g, '(')
     .replace(/\s*\)/g, ')')
     .trim();
+}
+
+/** 브라우저 textContent처럼 HTML 엔티티를 디코딩 (DOMParser가 없는 환경용. Java TodoListParser.decodeEntities와 같은 표) */
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', middot: '·', bull: '•',
+  hellip: '…', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', ndash: '–',
+  mdash: '—', times: '×', laquo: '«', raquo: '»', copy: '©', reg: '®', trade: '™',
+};
+
+export function decodeHtmlEntities(s: string): string {
+  return s.replace(/&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g, (whole, name: string) => {
+    if (name[0] === '#') {
+      const code = name[1] === 'x' || name[1] === 'X' ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
+      try {
+        return String.fromCodePoint(code);
+      } catch {
+        return whole; // 범위를 벗어난 숫자 엔티티는 그대로
+      }
+    }
+    return NAMED_ENTITIES[name] ?? whole;
+  });
+}
+
+/**
+ * DOMParser가 없는 환경(테스트)에서 `el.querySelector('.cls').textContent`와 같은 값을 구한다.
+ * 클래스 토큰이 정확히 일치하는 첫 요소, 같은 태그의 중첩을 세어 끝 태그를 찾고, 안쪽 태그는 빈 문자열로 제거.
+ * 백그라운드 워커(Java TodoListParser.textContentByClass)와 같은 규칙이어야 항목 ID가 일치한다.
+ */
+export function textContentByClass(html: string, cls: string): string | null {
+  const openTag = /<([a-zA-Z][\w-]*)\b([^>]*)>/g;
+  let m: RegExpExecArray | null;
+  while ((m = openTag.exec(html)) !== null) {
+    const classAttr = m[2].match(/(?:^|\s)class\s*=\s*(["'])([\s\S]*?)\1/i);
+    if (!classAttr || !classAttr[2].split(/\s+/).includes(cls)) continue;
+    const start = openTag.lastIndex;
+    const sameTag = new RegExp(`<(/?)${m[1]}\\b[^>]*>`, 'gi');
+    sameTag.lastIndex = start;
+    let depth = 1;
+    let end = html.length;
+    let t: RegExpExecArray | null;
+    while ((t = sameTag.exec(html)) !== null) {
+      if (t[1]) {
+        if (--depth === 0) {
+          end = t.index;
+          break;
+        }
+      } else if (!t[0].endsWith('/>')) {
+        depth++;
+      }
+    }
+    return decodeHtmlEntities(html.slice(start, end).replace(/<[^>]*>/g, ''));
+  }
+  return null;
 }
 
 export function cleanLecName(s: string): string {
@@ -128,6 +183,26 @@ export function isEmergencyNotice(title: string, body?: string): boolean {
   return false;
 }
 
+/**
+ * 세션이 살아 있다고 확인된 직후 페이지 요청이 실패하는 원인(다른 곳 로그인 / SSO 리디렉션 / 서버 오류)을
+ * 구분하기 위한 진단 로그. 최종 URL은 CapacitorHttp가 리디렉션을 따라간 결과.
+ */
+function logPageFailure(where: string, resp: HttpResponse, html: string): void {
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, m => (/alert\(/.test(m) ? m : ' '))
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  debugLog('scraper', `${where} 실패 (세션 만료로 처리)`, {
+    status: resp?.status,
+    finalUrl: (resp?.url || '').split('?')[0],
+    len: html.length,
+    title: html.match(/<title>([^<]*)<\/title>/i)?.[1]?.trim() || null,
+    kicked: isKickedResponse(html),
+    head: text.slice(0, 200),
+  });
+}
+
 export class LmsScraperService {
   public static isEmergencyNotice = isEmergencyNotice;
   public static cleanLecName = cleanLecName;
@@ -145,6 +220,7 @@ export class LmsScraperService {
 
     const html = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
     if (!html.includes('myCourseList')) {
+      logPageFailure('과목 목록(doListView)', resp, html);
       throw new Error('세션 만료: 로그인이 필요합니다.');
     }
 
@@ -190,6 +266,7 @@ export class LmsScraperService {
     const html = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
     // 정상 응답은 항목이 없어도 항상 todolist_pop 컨테이너를 포함 (HAR 확인)
     if (!html.includes('todolist_pop')) {
+      logPageFailure(`할일(doTodoList ${toDoType})`, resp, html);
       throw new Error('세션 만료: 로그인이 필요합니다.');
     }
     return html;
@@ -483,13 +560,12 @@ export class LmsScraperService {
           contentId = args[3] || '';
         }
 
-        const lecMatch = liBody.match(/<(?:span|div)[^>]*class=[\"\x27][^\"\x27]*\blec_name\b[^\"\x27]*[\"\x27][^>]*>([\s\S]*?)<\/(?:span|div)>/);
-        const rawLecName = lecMatch ? lecMatch[1] : '';
+        // 기기(DOM 경로)와 같은 값: querySelector('.lec_name' / '.subject').textContent
+        const rawLecName = textContentByClass(liBody, 'lec_name') ?? '';
         const matchedCourse = courses.find(c => c.course_id === courseId);
         const courseNm = matchedCourse ? matchedCourse.course_nm : cleanLecName(rawLecName);
 
-        const subjMatch = liBody.match(/<(?:span|div)[^>]*class=[\"\x27][^\"\x27]*\bsubject\b[^\"\x27]*[\"\x27][^>]*>([\s\S]*?)<\/(?:span|div)>/);
-        const rawSubject = cleanText(subjMatch ? subjMatch[1].replace(/<[^>]+>/g, ' ') : '');
+        const rawSubject = cleanText(textContentByClass(liBody, 'subject') ?? '');
         const title = rawSubject.replace(/\s*(?:새로운\s+|새\s+)?글이 등록되었습니다\.?/g, '').trim();
 
         const dateMatch = liBody.match(/<div[^>]*class=[\"\x27][^\"\x27]*\bdate\b[^\"\x27]*[\"\x27][^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/);

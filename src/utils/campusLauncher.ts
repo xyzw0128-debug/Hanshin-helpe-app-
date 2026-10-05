@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { debugLog } from '../services/debugLog';
+import { debugLog, isDebugLogEnabled } from '../services/debugLog';
 
 interface NativeAppLauncherPlugin {
   launchApp(options: { packageName: string; fallbackPackages?: string[] }): Promise<{ status: string; package?: string }>;
@@ -20,6 +20,8 @@ const launchLogs: LaunchLog[] = [];
 let isLaunching = false;
 
 function addLog(appId: string, stage: LaunchLog['stage'], startTime: number, detail?: string) {
+  // 로그를 기록하지 않는 상태(배포 앱 기본값)에서는 메모리에도 쌓지 않음
+  if (!isDebugLogEnabled()) return;
   launchLogs.push({
     timestamp: new Date().toISOString(),
     appId,

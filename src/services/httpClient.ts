@@ -1,18 +1,23 @@
 import { Capacitor, CapacitorHttp, CapacitorCookies, HttpOptions, HttpResponse } from '@capacitor/core';
+import { isKickedResponse, markKicked } from './sessionGuard';
 
 export class HttpClient {
   public static async get(options: HttpOptions): Promise<HttpResponse> {
-    if (Capacitor.isNativePlatform()) {
-      return CapacitorHttp.get(options);
-    }
-    return this.webRequest('GET', options);
+    const resp = Capacitor.isNativePlatform() ? await CapacitorHttp.get(options) : await this.webRequest('GET', options);
+    return this.inspect(options, resp);
   }
 
   public static async post(options: HttpOptions): Promise<HttpResponse> {
-    if (Capacitor.isNativePlatform()) {
-      return CapacitorHttp.post(options);
+    const resp = Capacitor.isNativePlatform() ? await CapacitorHttp.post(options) : await this.webRequest('POST', options);
+    return this.inspect(options, resp);
+  }
+
+  /** 다른 곳 로그인으로 끊긴 LMS 세션의 1회성 안내 응답은 어느 요청에서 받든 기록 */
+  private static inspect(options: HttpOptions, resp: HttpResponse): HttpResponse {
+    if (options.url.includes('lms.hs.ac.kr') && isKickedResponse(resp?.data)) {
+      markKicked();
     }
-    return this.webRequest('POST', options);
+    return resp;
   }
 
   public static async clearSession(): Promise<void> {

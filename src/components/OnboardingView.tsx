@@ -1,14 +1,25 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+import { isReleaseBuild } from '../services/buildPolicy';
 
 interface OnboardingViewProps {
   onLogin: (userId: string, userPw: string, geminiKey: string, options?: { rememberId: boolean; autoLogin: boolean }) => Promise<void>;
   isLoading: boolean;
   initialUserId?: string;
   initialRememberId?: boolean;
+  /** 로그인 화면으로 돌아온 이유 (예: 저장된 비밀번호가 틀림) */
+  notice?: string | null;
 }
 
-export const OnboardingView: React.FC<OnboardingViewProps> = ({ onLogin, isLoading, initialUserId = '', initialRememberId = true }) => {
+export const OnboardingView: React.FC<OnboardingViewProps> = ({
+  onLogin,
+  isLoading,
+  initialUserId = '',
+  initialRememberId = true,
+  notice,
+}) => {
+  // 배포 앱: Gemini 키 입력·로그인 옵션 숨김 (자동 로그인·아이디 저장은 항상 켜짐)
+  const release = isReleaseBuild();
   const [userId, setUserId] = useState(initialUserId);
   const [userPw, setUserPw] = useState('');
   const [rememberId, setRememberId] = useState(initialRememberId);
@@ -37,7 +48,12 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onLogin, isLoadi
     try {
       setIsSubmitting(true);
       // 자동 로그인은 저장된 아이디가 있어야 동작하므로 아이디 저장을 함께 적용
-      await onLogin(trimmedId, userPw, geminiKey.trim(), { rememberId: rememberId || autoLogin, autoLogin });
+      await onLogin(
+        trimmedId,
+        userPw,
+        release ? '' : geminiKey.trim(),
+        release ? { rememberId: true, autoLogin: true } : { rememberId: rememberId || autoLogin, autoLogin }
+      );
     } catch (err: any) {
       setErrorMessage(
         err?.message || '아이디 또는 비밀번호가 올바르지 않습니다. 다시 확인해주세요.'
@@ -56,9 +72,15 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onLogin, isLoadi
         <h2 className="text-xl font-black text-zinc-900 dark:text-white pt-2">한신대 스마트 LMS</h2>
         <p className="text-xs text-zinc-500 leading-relaxed">
           포털 아이디로 로그인하시면<br />
-          과제 마감 알림과 AI 공지 요약을 제공합니다.
+          {release ? '과제 마감과 새 공지를 알려 드려요.' : '과제 마감 알림과 AI 공지 요약을 제공합니다.'}
         </p>
       </div>
+
+      {notice && (
+        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl text-xs text-amber-900 dark:text-amber-200 font-medium leading-relaxed">
+          {notice}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-3 bg-zinc-50 dark:bg-zinc-950 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800">
@@ -101,7 +123,8 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onLogin, isLoadi
             </div>
           </div>
 
-          {/* 로그인 옵션 분리: 아이디 저장 & 자동 로그인 유지 */}
+          {/* 로그인 옵션 분리: 아이디 저장 & 자동 로그인 유지 (디버그 빌드만) */}
+          {!release && (
           <div className="flex items-center justify-between pt-1 px-0.5 text-xs text-zinc-600 dark:text-zinc-400">
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input
@@ -125,7 +148,9 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onLogin, isLoadi
               <span className="font-semibold text-[11px]">자동 로그인 유지</span>
             </label>
           </div>
+          )}
 
+          {!release && (
           <div className="pt-1">
             <button
               type="button"
@@ -159,6 +184,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onLogin, isLoadi
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* 로그인 실패 에러 메시지 표시 */}

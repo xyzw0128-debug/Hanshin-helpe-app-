@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { AppStateData, AssignmentItem, HomeCardSetting, NoticeItem } from '../types';
 import { CampusQuickHub } from './CampusQuickHub';
-import { mergeDayTimetable, SUBJECT_PALETTE } from './AcademicView';
+import { mergeDayTimetable, SUBJECT_PALETTE } from '../utils/timetable';
 import { parseLectureDeadline, stripLectureProgress } from '../services/lmsScraper';
 import { formatDeadlineBadge, formatTodayLabel, parseNoticeDate } from '../utils/date';
 import { isActiveAssignment, isActiveLecture, isQuizItem } from '../utils/lmsItems';

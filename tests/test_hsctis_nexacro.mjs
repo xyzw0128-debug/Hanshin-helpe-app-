@@ -2224,8 +2224,236 @@ console.log('\nTest 36: Materials (tab4) parsing & home card normalization...');
   console.log('  -> Test 36 Materials & home cards PASSED');
 }
 
+// -------------------------------------------------------------
+// Test 37: 다른 곳 로그인으로 끊긴 세션의 안내 페이지 판별 (EUC-KR 페이지가 UTF-8로 깨져도 감지)
+// -------------------------------------------------------------
+console.log('\nTest 37: Kicked-session page detection (incl. EUC-KR mojibake)...');
+{
+  const { isKickedResponse } = await import('../src/services/sessionGuard.ts');
+
+  // 기기 로그와 같은 형태: EUC-KR 바이트를 UTF-8로 읽어 한글이 깨진 짧은 안내 페이지
+  const eucKr = hex => new TextDecoder('utf-8').decode(Buffer.from(hex, 'hex'));
+  const page = msg =>
+    `<html><head><title>x</title><SCRIPT type=text/javascript>alert('${msg}'); top.location='/main/MainView.dunet'; </SCRIPT></head></html>`;
+  const kickedMojibake = page(eucKr('b4d9b8a520504320bfa1bcad20b7ceb1d7c0ce20b5c7befabdc0b4cfb4d92e'));
+  const loginRequiredMojibake = page(eucKr('b7ceb1d7c0ce20c8c420c0ccbfebc7cfbdc720bcf620c0d6bdc0b4cfb4d92e'));
+
+  assert.ok(!kickedMojibake.includes('다른'), '테스트 전제: 한글이 깨져 있어야 함');
+  assert.strictEqual(isKickedResponse(kickedMojibake), true, '깨진 "다른 PC 에서 로그인" 페이지 감지');
+  assert.strictEqual(isKickedResponse(loginRequiredMojibake), false, '"로그인 후 이용" 페이지는 다른 곳 로그인이 아님');
+  assert.strictEqual(isKickedResponse(page('다른 PC 에서 로그인 되었습니다.')), true, '정상 디코딩된 안내 페이지 감지');
+  assert.strictEqual(isKickedResponse({ data: {} }), false);
+
+  const harPath = '/home/lael/Downloads/hsackr/lms.hs.ac.kr_Archive [26-10-04 22-31-46].har';
+  if (fs.existsSync(harPath)) {
+    const entries = JSON.parse(fs.readFileSync(harPath, 'utf8')).log.entries;
+    const mainViews = entries.filter(e => e.request.url.includes('/main/MainView.dunet'));
+    assert.strictEqual(isKickedResponse(mainViews[0].response.content.text), true, 'HAR의 실제 안내 페이지 감지');
+    const normal = mainViews.find(e => (e.response.content.text || '').length > 10000);
+    assert.strictEqual(isKickedResponse(normal.response.content.text), false, '정상 메인 페이지는 감지하지 않음');
+  } else {
+    console.log('  (HAR 없음: HAR 기반 검증 생략)');
+  }
+
+  console.log('  -> Test 37 Kicked-session detection PASSED');
+}
+
+// -------------------------------------------------------------
+// Test 38: 백그라운드 워커(Java TodoListParser)와 앱(TS)의 할일 항목 ID 일치
+//   ID가 다르면 워커가 앱이 이미 본 항목을 새 항목으로 보고 중복 알림 (예: 제목의 &middot;)
+// -------------------------------------------------------------
+console.log('\nTest 38: Java TodoListParser IDs match TS parseTodoListHtml...');
+{
+  const { execFileSync } = await import('child_process');
+  const os = await import('os');
+  const path = await import('path');
+  const { LmsScraperService } = await import('../src/services/lmsScraper.js');
+
+  const harPath = '/home/lael/Downloads/hsackr/lms.hs.ac.kr_Archive [26-10-02 18-36-01].har';
+  let hasJdk = true;
+  try {
+    execFileSync('javac', ['-version'], { stdio: 'ignore' });
+  } catch {
+    hasJdk = false;
+  }
+
+  // 기기(DOM textContent)와 같은 값을 내야 하는 까다로운 경우. 기대 ID는 브라우저 textContent 기준으로 손으로 계산한 값
+  const synthetic = `<div class="todolist_pop"><ul>
+    <li class="tab tab2"><a href="javascript:fnGoContent('L','202620HS00openclass0201','01','C1');"><span class="subject">심리&middot;아동학 &#39;특강&#39; &amp; Q&amp;A (45%)</span><span class="lec_name">[2026] 열린강좌</span><div class="date"><span>2099.12.31 23:59</span></div></a></li>
+    <li class="tab tab5"><a href="javascript:fnGoContent('R','C2','01','');"><span class="subject">보고서&nbsp;제출 (학습시간/기준시간 : 1/2 )</span><span class="lec_name">과목</span><div class="date"><span>2099.12.31 23:59</span></div></a></li>
+    <li class="tab tab2"><a href="javascript:fnGoContent('L','C3','01','');"><span class="subject">강의 <b>A</b>B<span class="badge">C</span> 끝 (30%)</span><div class="date"><span>2099.12.31</span></div></a></li>
+    <li class="tab tab5"><a href="javascript:fnGoContent('R','C4','01','');"><span class="subject">　과제　제출&hellip;&#x2F;끝&rsquo;　</span></a></li>
+    <li class="tab tab7"><a href="javascript:fnGoContent('Q','C5','01','');"><span data-class="subject">미끼1</span><span class="subject-title">미끼2</span><div class="subject">진짜 퀴즈 새 글이 등록되었습니다.</div></a></li>
+  </ul></div>`;
+  const expectedSyntheticIds = [
+    "202620HS00openclass0201_lecture_심리·아동학 '특강' & Q&A",
+    'C2_assignment_보고서 제출 (1/2)',
+    'C3_lecture_강의 ABC 끝',
+    'C4_assignment_과제 제출…/끝’',
+    'C5_quiz_진짜 퀴즈',
+  ];
+  {
+    const r = LmsScraperService.parseTodoListHtml(synthetic);
+    const tsIds = [...r.assignments, ...r.lectures, ...r.quizzes].map(x => x.id).sort();
+    assert.deepStrictEqual(tsIds, [...expectedSyntheticIds].sort(), 'TS(정규식 경로)가 DOM textContent와 같은 ID를 내야 함');
+  }
+
+  if (!hasJdk) {
+    console.log('  (javac 없음: Java/TS ID 일치 검증 생략)');
+  } else {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'todo-xcheck-'));
+    const pages = [synthetic];
+    if (fs.existsSync(harPath)) {
+      for (const e of JSON.parse(fs.readFileSync(harPath, 'utf8')).log.entries) {
+        const t = e.response?.content?.text || '';
+        if (e.request.url.includes('doTodoList') && t.includes('todolist_pop')) pages.push(t);
+      }
+    }
+    pages.forEach((html, i) => fs.writeFileSync(path.join(tmp, `${String(i).padStart(2, '0')}.html`), html));
+    fs.writeFileSync(
+      path.join(tmp, 'Main.java'),
+      `import java.nio.file.*; import java.util.*;
+public class Main { public static void main(String[] a) throws Exception {
+  Path[] files = Files.list(Paths.get(a[0])).filter(p -> p.toString().endsWith(".html")).sorted().toArray(Path[]::new);
+  for (Path p : files) for (kr.ac.hs.lmsnotifier.TodoListParser.TodoItem it :
+      kr.ac.hs.lmsnotifier.TodoListParser.parse(new String(Files.readAllBytes(p), "UTF-8"), 0L))
+    System.out.println(p.getFileName() + "\\t" + it.id);
+}}`
+    );
+    const parserSrc = new URL('../android/app/src/main/java/kr/ac/hs/lmsnotifier/TodoListParser.java', import.meta.url).pathname;
+    execFileSync('javac', ['-encoding', 'UTF-8', '-d', tmp, parserSrc, path.join(tmp, 'Main.java')]);
+    const javaIds = new Set(
+      execFileSync('java', ['-cp', tmp, 'Main', tmp], { encoding: 'utf8' }).trim().split('\n').filter(Boolean)
+    );
+
+    const tsIds = new Set();
+    pages.forEach((html, i) => {
+      const r = LmsScraperService.parseTodoListHtml(html);
+      for (const it of [...r.assignments, ...r.lectures, ...r.quizzes]) tsIds.add(`${String(i).padStart(2, '0')}.html\t${it.id}`);
+    });
+
+    const onlyJava = [...javaIds].filter(x => !tsIds.has(x));
+    const onlyTs = [...tsIds].filter(x => !javaIds.has(x));
+    assert.deepStrictEqual({ onlyJava, onlyTs }, { onlyJava: [], onlyTs: [] }, 'Java/TS 항목 ID가 달라 중복 알림 발생');
+    for (const id of expectedSyntheticIds) {
+      assert.ok(javaIds.has(`00.html\t${id}`), `Java가 DOM 기준 ID를 내야 함: ${id}`);
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+    console.log(`  ${javaIds.size} IDs identical (${pages.length} pages)`);
+  }
+  console.log('  -> Test 38 Java/TS todo ID parity PASSED');
+}
+
+// -------------------------------------------------------------
+// Test 39: PC 세션 보호 판단 (다른 곳 로그인 vs 자연 만료). 시나리오는 기기 로그의 실제 순서 기준
+// -------------------------------------------------------------
+console.log('\nTest 39: Session guard decisions (kicked / natural expiry / recent-ok heuristic)...');
+{
+  const guard = await import('../src/services/sessionGuard.ts');
+  const { judgeInvalidSession, KICK_WINDOW_MS } = guard;
+  const T = 1_800_000_000_000;
+  const MIN = 60_000;
+  const judge = o => judgeInvalidSession({ okAt: 0, kickedAt: 0, expiredAt: 0, paused: false, now: T, ...o });
+
+  // 기기 로그 02:05:43: 세션 확인 정상(okAt) 직후 과목 목록이 "다른 PC" 응답 → 확정
+  assert.deepStrictEqual(judge({ okAt: T - 10, kickedAt: T - 5 }), { kicked: true, naturalExpiry: false, suspected: true });
+  // 끊김을 본 뒤 사용자가 다시 로그인(okAt 갱신) → 예전 끊김 기록은 무시. 마지막 정상이 오래전이면 재로그인 허용
+  assert.strictEqual(judge({ okAt: T - 40 * MIN, kickedAt: T - 50 * MIN }).suspected, false);
+  // 워커가 마지막 정상 이후 "다른 PC" 응답 없이 만료를 봄 → 자연 만료 (최근까지 정상이어도 재로그인 허용)
+  assert.deepStrictEqual(judge({ okAt: T - 10 * MIN, expiredAt: T - 2 * MIN }), { kicked: false, naturalExpiry: true, suspected: false });
+  // 앱이 "다른 PC" 응답을 받은 뒤 워커가 302를 봄 → 끊김이 우선
+  assert.strictEqual(judge({ okAt: T - 10 * MIN, kickedAt: T - 9 * MIN, expiredAt: T - 2 * MIN }).suspected, true);
+  // 아무 응답도 못 봤고 최근까지 정상 → 응답을 놓쳤을 수 있으므로 추정
+  assert.strictEqual(judge({ okAt: T - 5 * MIN }).suspected, true);
+  assert.strictEqual(judge({ okAt: T - KICK_WINDOW_MS - 1 }).suspected, false);
+  // 기록이 전혀 없음(첫 실행) → 재로그인 허용
+  assert.strictEqual(judge({}).suspected, false);
+  // 이미 멈춘 상태는 사용자가 풀 때까지 유지
+  assert.strictEqual(judge({ okAt: T - 5 * 60 * MIN, expiredAt: T - MIN, paused: true }).suspected, true);
+
+  // 저장 상태까지 포함한 흐름: 정상 → 끊김 응답 → 자동 판단은 멈춤 → 다시 로그인(정상 확인)하면 해제
+  guard.resumeSync();
+  guard.markSessionOk();
+  guard.markKicked();
+  assert.strictEqual(await guard.canRelogin({ enabled: true, interactive: false }), false, '끊김 확인 시 자동 재로그인 금지');
+  assert.strictEqual(guard.isSyncPaused(), true);
+  await new Promise(r => setTimeout(r, 2));
+  guard.markSessionOk();
+  assert.strictEqual(guard.isSyncPaused(), false, '다시 정상 확인되면 멈춤 해제');
+  // 보호 기능을 끈 경우: 항상 재로그인 허용 + 멈춤 해제
+  guard.markKicked();
+  assert.strictEqual(await guard.canRelogin({ enabled: false, interactive: false }), true);
+  assert.strictEqual(guard.isSyncPaused(), false);
+
+  console.log('  -> Test 39 Session guard PASSED');
+}
+
+// -------------------------------------------------------------
+// Test 40: 본 항목 기록 상한 + 비밀번호 오류 판별
+// -------------------------------------------------------------
+console.log('\nTest 40: Seen-key cap & credentials error detection...');
+{
+  const { mergeSeenKeys } = await import('../src/hooks/useLmsSync.ts');
+  const { isCredentialsError, LmsAuthCredentialsError } = await import('../src/services/lmsAuth.ts');
+
+  // 상한(3000)을 넘으면 오래된 것부터 정리하되, 지금 목록에 있는 항목은 아무리 오래됐어도 남김(지우면 중복 알림)
+  const old = Array.from({ length: 3500 }, (_, i) => `old_${i}`);
+  const current = ['old_0', 'new_1', 'new_2'];
+  const merged = mergeSeenKeys(old, current);
+  assert.strictEqual(merged.length, 3000);
+  for (const k of current) assert.ok(merged.includes(k), `현재 항목 유지: ${k}`);
+  assert.ok(merged.includes('old_3499') && !merged.includes('old_1'), '오래된 기록부터 정리');
+  assert.strictEqual(new Set(merged).size, merged.length, '중복 없음');
+  // 상한 이내면 그대로 합침
+  assert.deepStrictEqual(mergeSeenKeys(['a', 'b'], ['b', 'c']), ['a', 'b', 'c']);
+
+  // LMS 오류 클래스, 종합정보(HsctisAuthError) 문구 모두 비밀번호 오류로 판별. 네트워크 오류는 아님
+  assert.strictEqual(isCredentialsError(new LmsAuthCredentialsError()), true);
+  assert.strictEqual(isCredentialsError(new Error('아이디 또는 비밀번호가 올바르지 않습니다.')), true);
+  assert.strictEqual(isCredentialsError(new Error('LMS 서버에 연결할 수 없습니다. 인터넷 네트워크 연결을 확인해주세요.')), false);
+  assert.strictEqual(isCredentialsError(undefined), false);
+
+  console.log('  -> Test 40 Seen-key cap & credentials detection PASSED');
+}
+
+// -------------------------------------------------------------
+// Test 41: 배포 앱 전용 정리 (Gemini·디스코드 끔, PC 보호·자동 로그인 고정) + 문제 신고용 로그 기본 꺼짐
+// -------------------------------------------------------------
+console.log('\nTest 41: Release build policy & report log...');
+{
+  const dbg = await import('../src/services/debugLog.ts');
+  const { isReleaseBuild, applyReleasePolicy } = await import('../src/services/buildPolicy.ts');
+  await dbg.initDebugLog(); // Node에서는 네이티브 플러그인이 없어 "디버그 빌드 아님" = 배포 앱으로 동작
+
+  assert.strictEqual(isReleaseBuild(), true);
+  const cfg = applyReleasePolicy({
+    userId: 'u', userPw: 'p', geminiApiKey: 'KEY', useGeminiSummary: true, discordWebhookUrl: 'https://discord.com/api/webhooks/x',
+    protectPcSession: false, autoLogin: false, rememberId: false, syncIntervalMinutes: 30,
+  });
+  assert.strictEqual(cfg.geminiApiKey, '', 'Gemini 키 무시');
+  assert.strictEqual(cfg.useGeminiSummary, false);
+  assert.strictEqual(cfg.discordWebhookUrl, '', '디스코드 전송 안 함');
+  assert.strictEqual(cfg.protectPcSession, true, 'PC 로그인 보호 항상 켬');
+  assert.strictEqual(cfg.autoLogin, true);
+  assert.strictEqual(cfg.rememberId, true);
+  assert.strictEqual(cfg.userId, 'u');
+  assert.strictEqual(cfg.syncIntervalMinutes, 30, '나머지 설정은 그대로');
+
+  // 문제 신고용 로그: 기본 꺼짐 → 켜면 기록, 끄면 다시 기록 안 함
+  assert.strictEqual(dbg.isDebugLogEnabled(), false, '배포 앱은 기본으로 로그를 남기지 않음');
+  assert.strictEqual(await dbg.setReportLogEnabled(true), true);
+  dbg.debugLog('test', '신고용 로그 기록 확인');
+  assert.ok((await dbg.getCombinedDebugLog()).includes('신고용 로그 기록 확인'));
+  assert.strictEqual(await dbg.setReportLogEnabled(false), false);
+  await dbg.clearDebugLogs();
+  dbg.debugLog('test', '꺼진 뒤 기록');
+  assert.ok(!(await dbg.getCombinedDebugLog()).includes('꺼진 뒤 기록'), '끈 뒤에는 기록 안 함');
+
+  console.log('  -> Test 41 Release policy & report log PASSED');
+}
+
 console.log('\n======================================================');
-console.log('🎉 ALL HSCTIS, NEXACRO, LMS NOTICES, TODOLIST, NOTIFICATIONS & DDAY TESTS PASSED! (36/36)');
+console.log('🎉 ALL HSCTIS, NEXACRO, LMS NOTICES, TODOLIST, NOTIFICATIONS & DDAY TESTS PASSED! (41/41)');
 console.log('======================================================\n');
 
 

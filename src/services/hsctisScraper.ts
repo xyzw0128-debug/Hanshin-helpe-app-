@@ -8,6 +8,10 @@ import {
 } from '../types';
 import { NexacroClient, NexacroResult, unescapeXml } from './nexacroClient';
 import { HsctisAuthService } from './hsctisAuth';
+import { normalizeSubjectName, KNOWN_SUBJECT_COLORS, getSubjectColorIndex, PERIOD_TIMES } from '../utils/timetable';
+
+// 시간표 공용 값은 utils/timetable로 옮김 (홈 화면이 학사 모듈 전체를 불러오지 않도록). 기존 import 경로 호환용 재내보내기
+export { getSubjectColorIndex, PERIOD_TIMES } from '../utils/timetable';
 import { LmsAuthService } from './lmsAuth';
 
 function safeBtoa(str: string): string {
@@ -45,10 +49,6 @@ function mapCompDiv(rawCodeOrName: string): string {
 
 const DAY_NAMES = ['', '월', '화', '수', '목', '금', '토'];
 
-function normalizeSubjectName(subjectNm: string): string {
-  return (subjectNm || '').replace(/\s+/g, '').replace(/\([^)]*\)/g, '').toLowerCase();
-}
-
 // 종합정보 메뉴 코드 (cs/init/user 메뉴 목록 HAR 기준)
 const MENU_GRADES = '1487'; // 전체성적조회 (um72_0272005_m)
 const MENU_TIMETABLE = '2430'; // 수강신청및시간표조회 (ul72_0272017_m)
@@ -63,38 +63,6 @@ function resolveCurrentTerm(year?: string, semester?: string): { year: string; s
   const defaultYear = month === 1 ? now.getFullYear() - 1 : now.getFullYear();
   const defaultSemester = month >= 2 && month <= 7 ? '1' : '2';
   return { year: year || String(defaultYear), semester: semester || defaultSemester };
-}
-
-// 에브리타임 업로드 이미지 과목 기준 일치 매핑
-const KNOWN_SUBJECT_COLORS: Record<string, number> = {
-  '자율지능iot시스템': 0, // 살몬 코랄 (#ee7968)
-  '데이터베이스': 1,       // 머스타드 앰버 (#ecb559)
-  '데이터베이스시스템': 1, // 머스타드 앰버 (#ecb559)
-  '논리회로': 2,           // 올리브 그린 (#9dc462)
-  '인지감성ai에이전트': 3, // 민트 틸 (#6bc8ba)
-  '운영체제': 4,           // 소프트 퍼플 (#9782e0)
-  '채플': 5,               // 스카이 블루 (#709ee8)
-  '1인미디어만들기': 6,     // 웜 오렌지 (#fca15d)
-};
-
-/**
- * 과목명 해시 기반 고유 컬러 인덱스 도출
- * (8색 파스텔/비비드 팔레트와 1:1 매핑)
- */
-export function getSubjectColorIndex(subjectNm: string, paletteSize: number = 8): number {
-  if (!subjectNm) return 0;
-  const normalized = normalizeSubjectName(subjectNm);
-
-  if (KNOWN_SUBJECT_COLORS[normalized] !== undefined) {
-    return KNOWN_SUBJECT_COLORS[normalized];
-  }
-
-  // 31-bit string hash
-  let hash = 0;
-  for (let i = 0; i < normalized.length; i++) {
-    hash = ((hash << 5) - hash + normalized.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash) % paletteSize;
 }
 
 /**
@@ -128,26 +96,6 @@ export function assignDistinctSubjectColors<T extends { subjectNm: string; color
     return idx === undefined ? it : { ...it, colorIndex: idx };
   });
 }
-
-/**
- * 한신대학교 공식 75분 수업 + 15분 휴식 교시 체계 (09:30 시작)
- */
-export const PERIOD_TIMES: Record<number, string> = {
-  1: '09:30 - 10:45', // 1교시 (1블록)
-  2: '11:00 - 12:15', // 2교시 (2블록)
-  3: '13:00 - 14:15', // 3교시 (3블록)
-  4: '14:30 - 15:45', // 4교시 (4블록)
-  5: '16:00 - 17:15', // 5교시 (5블록)
-  6: '17:30 - 18:45', // 6교시 (야간 1블록)
-  7: '19:00 - 20:15', // 7교시 (야간 2블록)
-  8: '20:30 - 21:45', // 8교시 (야간 3블록)
-  9: '22:00 - 23:15', // 9교시 (야간 4블록)
-  10: '18:00 - 19:15', // 10교시 (야간 레거시 매핑)
-  11: '19:25 - 20:40', // 11교시 (야간 레거시 매핑)
-  12: '20:50 - 22:05', // 12교시 (야간 레거시 매핑)
-  13: '22:15 - 23:30', // 13교시 (야간 레거시 매핑)
-  14: '23:40 - 00:55', // 14교시 (야간 레거시 매핑)
-};
 
 export interface ScheduleSlot {
   dayOfWeek: number;

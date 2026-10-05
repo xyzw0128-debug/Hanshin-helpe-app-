@@ -5,6 +5,12 @@ export interface BackgroundSyncStatus {
   lastStatus: string;
   enabled: boolean;
   intervalMinutes: number;
+  /** 백그라운드 워커가 마지막으로 유효한 세션을 확인한 시각(epoch ms, 없으면 0) */
+  sessionOkAt?: number;
+  /** 백그라운드 워커가 "다른 PC 에서 로그인" 응답을 받은 시각(epoch ms, 없으면 0) */
+  sessionKickedAt?: number;
+  /** 백그라운드 워커가 "다른 PC" 응답 없이 세션 만료를 본 시각(epoch ms, 없으면 0) = 자연 만료 */
+  sessionExpiredAt?: number;
 }
 
 export interface BackgroundSyncPluginInterface {
@@ -15,11 +21,13 @@ export interface BackgroundSyncPluginInterface {
   }>;
   getStatus(): Promise<BackgroundSyncStatus>;
   saveSession(): Promise<{ saved: boolean }>;
-  restoreSession(): Promise<{ restored: boolean }>;
+  restoreSession(): Promise<{ restored: boolean; hasCookie?: boolean }>;
   clearSession(): Promise<void>;
   getSeenItems(): Promise<{ ids: string[] }>;
   markItemsSeen(options: { ids: string[] }): Promise<void>;
-  getDebugLog(): Promise<{ enabled: boolean; log: string }>;
+  getDebugLog(): Promise<{ enabled: boolean; debugBuild?: boolean; log: string }>;
+  setReportLog(options: { enabled: boolean }): Promise<{ enabled: boolean }>;
+  recordSessionKicked(): Promise<void>;
   clearDebugLog(): Promise<void>;
   shareText(options: { text: string; title?: string }): Promise<void>;
 }
@@ -66,7 +74,7 @@ const BackgroundSyncPlugin = registerPlugin<BackgroundSyncPluginInterface>('Back
       return { saved: false };
     },
     async restoreSession() {
-      return { restored: false };
+      return { restored: false, hasCookie: false };
     },
     async clearSession() {},
     async getSeenItems() {
@@ -74,9 +82,15 @@ const BackgroundSyncPlugin = registerPlugin<BackgroundSyncPluginInterface>('Back
     },
     async markItemsSeen() {},
     async getDebugLog() {
-      // 웹 개발 서버(vite dev)에서만 활성화
-      return { enabled: (import.meta as any).env?.DEV === true, log: '' };
+      // 웹 개발 서버(vite dev)는 디버그 빌드처럼 취급. 주소에 ?release=1을 붙이면 배포 앱 화면으로 미리보기
+      const previewRelease = typeof location !== 'undefined' && /[?&]release=1\b/.test(location.search);
+      const dev = (import.meta as any).env?.DEV === true && !previewRelease;
+      return { enabled: dev, debugBuild: dev, log: '' };
     },
+    async setReportLog(options: { enabled: boolean }) {
+      return { enabled: options.enabled };
+    },
+    async recordSessionKicked() {},
     async clearDebugLog() {},
     async shareText() {
       throw new Error('share not supported on web');
@@ -130,14 +144,25 @@ export async function saveLmsSession(): Promise<void> {
 
 /**
  * 앱 시작 시 보관된 LMS 세션 쿠키 복원 (유효하면 SSO 재로그인 없이 재사용하여 PC 세션 보호)
+ * restored: 보관 사본에서 복원함 / hasCookie: 복원 여부와 관계없이 지금 세션 쿠키가 있음
  */
-export async function restoreLmsSession(): Promise<boolean> {
+export async function restoreLmsSession(): Promise<{ restored: boolean; hasCookie: boolean }> {
   try {
     const res = await BackgroundSyncPlugin.restoreSession();
-    return res?.restored ?? false;
+    const restored = res?.restored ?? false;
+    return { restored, hasCookie: res?.hasCookie ?? restored };
   } catch (e) {
     console.warn('Failed to restore LMS session cookie', e);
-    return false;
+    return { restored: false, hasCookie: false };
+  }
+}
+
+/** 앱이 받은 "다른 PC 에서 로그인" 응답을 워커에도 기록 */
+export async function recordSessionKicked(): Promise<void> {
+  try {
+    await BackgroundSyncPlugin.recordSessionKicked();
+  } catch {
+    // 웹 환경 등: 앱 쪽 기록(sessionGuard)만으로도 판단 가능
   }
 }
 
