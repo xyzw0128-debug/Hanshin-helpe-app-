@@ -57,15 +57,14 @@ public class BackgroundSyncWorker extends Worker {
     public static final String PREF_SESSION_KICKED_AT = "lms_session_kicked_at";
     // "다른 PC" 응답 없이 세션 만료(302·로그인 필요)를 본 시각(epoch ms). 앱이 자연 만료로 보고 재로그인해도 되는지 판단
     public static final String PREF_SESSION_EXPIRED_AT = "lms_session_expired_at";
-    private static final Pattern KICKED_PATTERN = Pattern.compile("다른\\s*PC\\s*에서\\s*로그인");
-    // 안내 페이지가 EUC-KR이라 UTF-8로 읽으면 한글이 깨짐 → 깨져도 남는 ASCII alert('… PC …')로도 판별 (짧은 응답만)
-    private static final Pattern KICKED_ALERT_PATTERN = Pattern.compile("alert\\(\\s*['\"][^'\"]*PC[^'\"]*['\"]\\s*\\)");
+    // 안내 페이지: 짧은 응답 + alert('…PC…'); top.location=... (EUC-KR이라 한글은 깨질 수 있어 ASCII 구조로 판별)
+    // 일반 페이지 본문에 "다른 PC에서 로그인" 문장이 있어도 걸리지 않게 구조와 길이를 함께 본다 (sessionGuard.ts와 같은 규칙)
+    private static final Pattern KICKED_PAGE_PATTERN =
+            Pattern.compile("alert\\(\\s*['\"][^'\"]*PC[^'\"]*['\"]\\s*\\)\\s*;?\\s*top\\.location\\s*=");
     private static final int KICKED_PAGE_MAX_LEN = 2000;
 
     static boolean isKickedResponse(String html) {
-        if (html == null) return false;
-        if (KICKED_PATTERN.matcher(html).find()) return true;
-        return html.length() <= KICKED_PAGE_MAX_LEN && KICKED_ALERT_PATTERN.matcher(html).find();
+        return html != null && html.length() <= KICKED_PAGE_MAX_LEN && KICKED_PAGE_PATTERN.matcher(html).find();
     }
 
     public static final String CHANNEL_ID = "lms_background_sync";

@@ -2243,6 +2243,11 @@ console.log('\nTest 37: Kicked-session page detection (incl. EUC-KR mojibake)...
   assert.strictEqual(isKickedResponse(loginRequiredMojibake), false, '"로그인 후 이용" 페이지는 다른 곳 로그인이 아님');
   assert.strictEqual(isKickedResponse(page('다른 PC 에서 로그인 되었습니다.')), true, '정상 디코딩된 안내 페이지 감지');
   assert.strictEqual(isKickedResponse({ data: {} }), false);
+  // 일반 페이지에 같은 문장이 들어 있을 뿐이면 감지하지 않음 (공지 본문 등)
+  const noticeBody = `<html><body><div class="view_cont">시험 중 다른 PC 에서 로그인 되었습니다 라는 안내가 뜨면 감독관에게 알리세요.</div>${'<p>본문</p>'.repeat(400)}</body></html>`;
+  assert.strictEqual(isKickedResponse(noticeBody), false, '긴 일반 페이지의 문장은 무시');
+  assert.strictEqual(isKickedResponse('<p>다른 PC 에서 로그인 되었습니다.</p>'), false, 'alert·이동 구조가 없으면 무시');
+  assert.strictEqual(isKickedResponse("<script>alert('PC 버전에서만 됩니다');</script>"), false, 'PC가 든 다른 alert는 무시');
 
   const harPath = '/home/lael/Downloads/hsackr/lms.hs.ac.kr_Archive [26-10-04 22-31-46].har';
   if (fs.existsSync(harPath)) {

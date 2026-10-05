@@ -16,14 +16,15 @@ import { debugLog } from './debugLog';
  */
 export const KICK_WINDOW_MS = 30 * 60 * 1000;
 
-/** 끊긴 세션의 첫 요청에 서버가 돌려주는 안내 문구 (공백 차이 허용) */
-const KICKED_PATTERN = /다른\s*PC\s*에서\s*로그인/;
 /**
- * 이 안내 페이지는 EUC-KR이라 앱(UTF-8로 읽음)에서는 한글이 깨진다(기기 로그 확인).
- * 깨져도 남는 ASCII 부분 `alert('… PC …')`로도 판별. 일반 페이지 스크립트와 헷갈리지 않게 짧은 응답(400자 안팎)만 대상.
- * 같은 크기의 "로그인 후 이용하실 수 있습니다" 페이지에는 PC가 없어 구분된다.
+ * 끊긴 세션의 첫 요청에 서버가 돌려주는 안내 페이지 (400자 안팎, HAR·기기 로그 확인):
+ *   <SCRIPT>alert('다른 PC 에서 로그인 되었습니다.'); top.location='/main/MainView.dunet';</SCRIPT>
+ * EUC-KR이라 앱(UTF-8로 읽음)에서는 한글이 깨지므로, 깨져도 남는 ASCII 구조로 판별한다.
+ * 공지 본문처럼 "다른 PC에서 로그인" 문장이 들어 있을 뿐인 일반 페이지가 걸리지 않도록
+ * 짧은 응답 + alert('…PC…') 바로 뒤 top.location 이동 구조일 때만 인정한다.
+ * 같은 형태의 "로그인 후 이용하실 수 있습니다" 페이지에는 PC가 없어 구분된다.
  */
-const KICKED_ALERT_PATTERN = /alert\(\s*['"][^'"]*PC[^'"]*['"]\s*\)/;
+const KICKED_PAGE_PATTERN = /alert\(\s*['"][^'"]*PC[^'"]*['"]\s*\)\s*;?\s*top\.location\s*=/;
 const KICKED_PAGE_MAX_LEN = 2000;
 
 const OK_AT_KEY = 'hs_lms_session_ok_at';
@@ -64,9 +65,7 @@ export function markSessionOk(): void {
 }
 
 export function isKickedResponse(body: unknown): boolean {
-  if (typeof body !== 'string') return false;
-  if (KICKED_PATTERN.test(body)) return true;
-  return body.length <= KICKED_PAGE_MAX_LEN && KICKED_ALERT_PATTERN.test(body);
+  return typeof body === 'string' && body.length <= KICKED_PAGE_MAX_LEN && KICKED_PAGE_PATTERN.test(body);
 }
 
 /** 서버가 "다른 PC 에서 로그인" 응답을 보냈을 때 호출 */
