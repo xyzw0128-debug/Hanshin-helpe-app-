@@ -49,6 +49,12 @@ public class BackgroundSyncWorker extends Worker {
     public static final String PREF_HAS_SEEDED = "has_seeded";
     public static final String PREF_ENABLED = "enabled";
     public static final String PREF_INTERVAL_MINUTES = "interval_minutes";
+    // 과목 공지(완료 목록의 tab9)를 처음 확인했는지. 처음 회차는 기존 공지를 기록만 하고 알리지 않음
+    public static final String PREF_NOTICES_SEEDED = "notices_seeded";
+    // 앱 알림 설정 (BackgroundSyncPlugin.setNotificationPrefs): 푸시 전체 / 새 과제·강의·퀴즈 / 새 공지
+    public static final String PREF_NOTIFY_PUSH = "notify_push";
+    public static final String PREF_NOTIFY_ITEMS = "notify_items";
+    public static final String PREF_NOTIFY_NOTICES = "notify_notices";
     // Capacitor는 앱 시작/종료 시 세션 쿠키를 삭제하므로 LMS 세션 쿠키 사본을 별도 보관
     public static final String PREF_SESSION_COOKIE = "lms_session_cookie";
     // 서버가 세션을 마지막으로 유효하다고 응답한 시각(epoch ms). 앱이 "다른 곳 로그인" 추정에 사용
@@ -249,19 +255,42 @@ public class BackgroundSyncWorker extends Worker {
 
         prefs.edit().putLong(PREF_SESSION_OK_AT, System.currentTimeMillis()).apply();
         clearSyncStopped(context, prefs);
+        long now = System.currentTimeMillis();
 
         // 4. 할일 목록 파싱: 과제(tab5), 온라인 인강(tab2), 퀴즈/시험(tab7, tab8)
         // 항목 ID는 앱(lmsScraper.ts)과 같아야 함 → TodoListParser 참고
-        List<TodoItem> parsedItems = TodoListParser.parse(html, System.currentTimeMillis());
+        List<TodoItem> parsedItems = TodoListParser.parse(html, now);
         DebugLog.log(context, "worker", "parsed " + parsedItems.size() + " items (html " + html.length() + " chars)");
         List<TodoItem> pendingItems = new ArrayList<>();
         for (TodoItem item : parsedItems) {
-            if (item.isPending) {
+            if (item.isPending && !"tab9".equals(item.tab)) {
                 pendingItems.add(item);
             }
         }
 
-        // 5. SharedPreferences의 seen ID 추적 및 알림 발송
+        // 4-1. 완료 목록(complete): 과목 공지(tab9)는 이 목록에만 오고, 제출·수강을 마친 항목의 마감 알림을 지우는 데 씀
+        //      실패해도 할 일 확인은 그대로 진행 (공지·완료 반영만 이번 회차에서 건너뜀)
+        List<TodoItem> completeItems = null;
+        try {
+            HttpResult complete = send(context, "POST", TODO_URL, TODO_REFERER, cookie, "to_do_type=complete");
+            DebugLog.log(context, "worker", "doTodoList(complete) HTTP " + complete.code);
+            if (isKickedResponse(complete.body)) {
+                // 두 요청 사이에 다른 곳 로그인으로 끊김: 1회성 안내라 여기서 기록하지 않으면 다음 회차에 자연 만료로 오인
+                DebugLog.log(context, "worker", "server says: logged in from another PC (complete list)");
+                prefs.edit().putLong(PREF_SESSION_KICKED_AT, System.currentTimeMillis()).apply();
+                notifySyncStopped(context, prefs);
+            } else if (complete.code == 200 && complete.body.contains("todolist_pop")) {
+                completeItems = TodoListParser.parse(complete.body, now);
+            }
+        } catch (Exception e) {
+            DebugLog.log(context, "worker", "complete list skipped: " + e.getClass().getSimpleName());
+        }
+
+        boolean pushOn = prefs.getBoolean(PREF_NOTIFY_PUSH, true);
+        boolean itemAlertOn = pushOn && prefs.getBoolean(PREF_NOTIFY_ITEMS, true);
+        boolean noticeAlertOn = pushOn && prefs.getBoolean(PREF_NOTIFY_NOTICES, true);
+
+        // 5. SharedPreferences의 seen ID 추적 및 알림 발송 (알림을 꺼 둬도 본 것으로 기록해 나중에 켰을 때 몰아서 오지 않게)
         boolean hasSeeded = prefs.getBoolean(PREF_HAS_SEEDED, false);
         Set<String> seenIds = prefs.getStringSet(PREF_SEEN_ITEM_IDS, null);
         seenIds = seenIds != null ? new HashSet<>(seenIds) : new HashSet<>();
@@ -278,28 +307,50 @@ public class BackgroundSyncWorker extends Worker {
             for (TodoItem item : pendingItems) {
                 seenIds.add(item.id);
             }
-            prefs.edit()
-                .putBoolean(PREF_HAS_SEEDED, true)
-                .putStringSet(PREF_SEEN_ITEM_IDS, seenIds)
-                .apply();
+            prefs.edit().putBoolean(PREF_HAS_SEEDED, true).apply();
             Log.i(TAG, "First background run: seeded " + pendingItems.size() + " items without notification.");
             DebugLog.log(context, "worker", "first run: seeded " + pendingItems.size() + " items (no notification)");
-        } else {
+        } else if (!newItems.isEmpty()) {
             // 이후 실행: 신규 발견된 미완료 할일에 대해서만 알림 발송
-            if (!newItems.isEmpty()) {
-                sendNotification(context, newItems);
-                for (TodoItem item : newItems) {
-                    seenIds.add(item.id);
-                }
-                prefs.edit()
-                    .putStringSet(PREF_SEEN_ITEM_IDS, seenIds)
-                    .apply();
-                Log.i(TAG, "Notified " + newItems.size() + " new pending items.");
-                StringBuilder ids = new StringBuilder();
-                for (TodoItem item : newItems) ids.append(item.id).append(", ");
-                DebugLog.log(context, "worker", "notified " + newItems.size() + " new items: " + ids);
+            if (itemAlertOn) sendNotification(context, newItems);
+            for (TodoItem item : newItems) {
+                seenIds.add(item.id);
+            }
+            StringBuilder ids = new StringBuilder();
+            for (TodoItem item : newItems) ids.append(item.id).append(", ");
+            DebugLog.log(context, "worker", (itemAlertOn ? "notified " : "seen (alert off) ") + newItems.size() + " new items: " + ids);
+        }
+
+        // 5-1. 새 과목 공지 (완료 목록의 tab9). 공지를 처음 확인하는 회차(업데이트 직후 포함)는 기록만 하고 알리지 않음
+        if (completeItems != null) {
+            List<TodoItem> notices = new ArrayList<>();
+            for (TodoItem item : completeItems) {
+                if ("tab9".equals(item.tab)) notices.add(item);
+            }
+            boolean noticesSeeded = prefs.getBoolean(PREF_NOTICES_SEEDED, false);
+            List<TodoItem> newNotices = new ArrayList<>();
+            for (TodoItem n : notices) {
+                if (!seenIds.contains(n.id)) newNotices.add(n);
+                seenIds.add(n.id);
+            }
+            if (!noticesSeeded) {
+                prefs.edit().putBoolean(PREF_NOTICES_SEEDED, true).apply();
+                DebugLog.log(context, "worker", "notices first run: seeded " + notices.size());
+            } else if (!newNotices.isEmpty()) {
+                if (noticeAlertOn) sendNoticeNotification(context, newNotices);
+                DebugLog.log(context, "worker", (noticeAlertOn ? "notified " : "seen (alert off) ") + newNotices.size() + " new notices");
             }
         }
+        prefs.edit().putStringSet(PREF_SEEN_ITEM_IDS, seenIds).apply();
+
+        // 6. 마감 알림 갱신: 완료 목록에 오른 항목은 지우고, 처음 보는 진행 중 항목은 예약 (앱을 열지 않아도 맞춰짐)
+        Set<String> completedIds = new HashSet<>();
+        if (completeItems != null) {
+            for (TodoItem item : completeItems) {
+                if (!"tab9".equals(item.tab)) completedIds.add(item.id);
+            }
+        }
+        DeadlineReminders.applyWorkerResult(context, pendingItems, completedIds, now);
 
         String statusMsg = pendingItems.isEmpty()
                 ? "정상 동기화됨 (미완료 항목 없음)"
@@ -339,15 +390,16 @@ public class BackgroundSyncWorker extends Worker {
             return;
         }
 
-        Intent intent = new Intent(context, MainActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        // 누르면 홈으로 (멈춤 안내와 "다시 로그인" 버튼이 있는 화면)
+        Intent intent = MainActivity.openIntent(context, "home", null);
         PendingIntent pendingIntent = PendingIntent.getActivity(context, SYNC_STOPPED_NOTIFICATION_ID, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0));
-        int iconRes = context.getApplicationInfo().icon != 0 ? context.getApplicationInfo().icon : R.mipmap.ic_launcher;
+        int iconRes = R.drawable.ic_stat_notify; // 상태 표시줄용 흑백 아이콘 (컬러 앱 아이콘은 흰 동그라미로 보임)
 
         try {
             nm.notify(SYNC_STOPPED_NOTIFICATION_ID, new NotificationCompat.Builder(context, STATUS_CHANNEL_ID)
                     .setSmallIcon(iconRes)
+                    .setColor(0xFF5C088C) // 앱 보라색
                     .setContentTitle(title)
                     .setContentText(text)
                     .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
@@ -444,79 +496,53 @@ public class BackgroundSyncWorker extends Worker {
     }
 
     private void sendNotification(Context context, List<TodoItem> newItems) {
-        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (nm == null) return;
-
-        // Android 8.0+ 알림 채널 등록
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_DEFAULT
-            );
-            channel.setDescription("한신대학교 LMS 백그라운드 할일 알림");
-            channel.enableVibration(true);
-            nm.createNotificationChannel(channel);
-        }
-
-        // Android 13+ (API 33+) POST_NOTIFICATIONS 권한 체크
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
-                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                Log.w(TAG, "POST_NOTIFICATIONS permission not granted. Cannot display notification.");
-                DebugLog.log(context, "worker", "notification skipped: POST_NOTIFICATIONS not granted");
-                return;
-            }
-        }
-
-        Intent intent = new Intent(context, MainActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-                context,
-                0,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
-        );
-
         String title;
         String contentText;
+        TodoItem first = newItems.get(0);
         if (newItems.size() == 1) {
-            TodoItem item = newItems.get(0);
             String typeLabel = "할일";
-            if ("tab5".equals(item.tab)) typeLabel = "과제";
-            else if ("tab2".equals(item.tab)) typeLabel = "온라인 강의";
-            else if ("tab7".equals(item.tab) || "tab8".equals(item.tab)) typeLabel = "퀴즈/시험";
+            if ("tab5".equals(first.tab)) typeLabel = "과제";
+            else if ("tab2".equals(first.tab)) typeLabel = "온라인 강의";
+            else if ("tab7".equals(first.tab) || "tab8".equals(first.tab)) typeLabel = "퀴즈/시험";
 
-            String coursePrefix = (item.courseNm != null && !item.courseNm.isEmpty()) ? "[" + item.courseNm + "] " : "";
+            String coursePrefix = (first.courseNm != null && !first.courseNm.isEmpty()) ? "[" + first.courseNm + "] " : "";
             title = "📝 " + coursePrefix + "새 " + typeLabel + " 등록!";
-            contentText = item.title + (item.dateStr.isEmpty() ? "" : " (기한: " + item.dateStr + ")");
+            contentText = first.title + (first.dateStr.isEmpty() ? "" : " (기한: " + first.dateStr + ")");
         } else {
             title = "📝 LMS 새 학습활동 " + newItems.size() + "건 등록!";
-            TodoItem first = newItems.get(0);
             contentText = first.title + " 외 " + (newItems.size() - 1) + "건";
         }
 
-        int iconRes = context.getApplicationInfo().icon != 0 ? context.getApplicationInfo().icon : R.mipmap.ic_launcher;
+        // 누르면 해당 목록으로 (한 건이면 그 항목을 바로 엶)
+        boolean allLectures = true;
+        for (TodoItem item : newItems) allLectures &= "tab2".equals(item.tab);
+        String target = allLectures ? "lms:lectures" : "lms:assignments";
+        String itemId = newItems.size() == 1 && !allLectures ? first.id : null;
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(iconRes)
-                .setContentTitle(title)
-                .setContentText(contentText)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(contentText))
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setAutoCancel(true)
-                .setContentIntent(pendingIntent);
+        // 항목 ID 기반 결정론적 알림 ID (재실행 시 같은 항목 알림은 덮어쓰기)
+        StringBuilder idSeed = new StringBuilder();
+        for (TodoItem item : newItems) idSeed.append(item.id).append('|');
+        int notifId = idSeed.toString().hashCode() & 0x7FFFFFFF;
+        DeadlineReminders.post(context, CHANNEL_ID, CHANNEL_NAME, "한신대학교 LMS 백그라운드 할일 알림",
+                notifId, title, contentText, target, itemId);
+    }
 
-        try {
-            // 항목 ID 기반 결정론적 알림 ID (재실행 시 같은 항목 알림은 덮어쓰기)
-            StringBuilder idSeed = new StringBuilder();
-            for (TodoItem item : newItems) idSeed.append(item.id).append('|');
-            int notifId = idSeed.toString().hashCode() & 0x7FFFFFFF;
-            nm.notify(notifId, builder.build());
-        } catch (Exception ex) {
-            Log.w(TAG, "Failed to display notification: " + ex.getMessage());
-            DebugLog.log(context, "worker", "notification failed: " + ex.getMessage());
+    private void sendNoticeNotification(Context context, List<TodoItem> notices) {
+        TodoItem first = notices.get(0);
+        String title;
+        String text;
+        if (notices.size() == 1) {
+            String coursePrefix = (first.courseNm != null && !first.courseNm.isEmpty()) ? "[" + first.courseNm + "] " : "";
+            title = "📢 " + coursePrefix + "새 공지사항";
+            text = first.title;
+        } else {
+            title = "📢 LMS 새 공지 " + notices.size() + "건";
+            text = first.title + " 외 " + (notices.size() - 1) + "건";
         }
+        StringBuilder idSeed = new StringBuilder("notice|");
+        for (TodoItem n : notices) idSeed.append(n.id).append('|');
+        DeadlineReminders.post(context, CHANNEL_ID, CHANNEL_NAME, "한신대학교 LMS 백그라운드 할일 알림",
+                idSeed.toString().hashCode() & 0x7FFFFFFF, title, text, "lms:notices", notices.size() == 1 ? first.id : null);
     }
 
     private void updateStatus(Context context, String status, int itemsCount) {

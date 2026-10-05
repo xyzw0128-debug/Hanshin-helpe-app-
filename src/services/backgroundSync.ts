@@ -30,6 +30,23 @@ export interface BackgroundSyncPluginInterface {
   recordSessionKicked(): Promise<void>;
   clearDebugLog(): Promise<void>;
   shareText(options: { text: string; title?: string }): Promise<void>;
+  setNotificationPrefs(options: { push: boolean; newItems: boolean; newNotices: boolean }): Promise<void>;
+  syncReminders(options: {
+    items: ReminderItem[];
+    enabled: boolean;
+    dayBefore: boolean;
+    threeHours: boolean;
+  }): Promise<{ count: number }>;
+}
+
+/** 마감 알림 대상 (네이티브 DeadlineReminders.Item과 같은 모양) */
+export interface ReminderItem {
+  id: string;
+  kind: 'assignment' | 'quiz' | 'lecture';
+  courseNm: string;
+  title: string;
+  deadlineStr: string;
+  deadlineMs: number;
 }
 
 let webFallbackEnabled = true;
@@ -94,6 +111,10 @@ const BackgroundSyncPlugin = registerPlugin<BackgroundSyncPluginInterface>('Back
     async clearDebugLog() {},
     async shareText() {
       throw new Error('share not supported on web');
+    },
+    async setNotificationPrefs() {},
+    async syncReminders(options) {
+      return { count: options.items.length };
     },
   },
 });
@@ -197,6 +218,35 @@ export async function markBackgroundItemsSeen(ids: string[]): Promise<void> {
   } catch (e) {
     console.warn('Failed to mark background items seen', e);
   }
+}
+
+/**
+ * 앱 알림 설정을 백그라운드 워커에 전달 (워커는 앱 설정을 직접 읽지 못함)
+ */
+export async function syncNotificationPrefs(cfg: {
+  pushNotificationsEnabled?: boolean;
+  newAssignmentAlert?: boolean;
+  newNoticeAlert?: boolean;
+}): Promise<void> {
+  try {
+    await BackgroundSyncPlugin.setNotificationPrefs({
+      push: cfg.pushNotificationsEnabled !== false,
+      newItems: cfg.newAssignmentAlert !== false,
+      newNotices: cfg.newNoticeAlert !== false,
+    });
+  } catch (e) {
+    console.warn('Failed to sync notification prefs', e);
+  }
+}
+
+/**
+ * 마감 알림 목록을 네이티브에 넘겨 예약 (화면이 꺼져 있어도 울리는 알람, 백그라운드 확인이 이어서 갱신)
+ */
+export async function syncNativeReminders(
+  items: ReminderItem[],
+  options: { enabled: boolean; dayBefore: boolean; threeHours: boolean }
+): Promise<void> {
+  await BackgroundSyncPlugin.syncReminders({ items, ...options });
 }
 
 export { BackgroundSyncPlugin };

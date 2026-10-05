@@ -52,6 +52,7 @@ public class BackgroundSyncPlugin extends Plugin {
             prefs.edit()
                     .remove(BackgroundSyncWorker.PREF_SEEN_ITEM_IDS)
                     .putBoolean(BackgroundSyncWorker.PREF_HAS_SEEDED, false)
+                    .putBoolean(BackgroundSyncWorker.PREF_NOTICES_SEEDED, false)
                     .apply();
         } else if (BackgroundSyncWorker.isTestInterval(context, intervalMinutes)) {
             // 디버그 빌드 테스트 모드: 주기 작업 대신 n분 뒤 1회 실행을 워커가 계속 이어서 예약
@@ -152,7 +153,9 @@ public class BackgroundSyncPlugin extends Plugin {
                 .remove(BackgroundSyncWorker.PREF_SESSION_COOKIE)
                 .remove(BackgroundSyncWorker.PREF_SEEN_ITEM_IDS)
                 .putBoolean(BackgroundSyncWorker.PREF_HAS_SEEDED, false)
+                .putBoolean(BackgroundSyncWorker.PREF_NOTICES_SEEDED, false)
                 .apply();
+        DeadlineReminders.clear(getContext());
         DebugLog.log(getContext(), "plugin", "clearSession");
         call.resolve();
     }
@@ -170,7 +173,8 @@ public class BackgroundSyncPlugin extends Plugin {
     }
 
     /**
-     * 포그라운드 동기화에서 확인한 항목 ID를 워커의 알림 이력에 병합 (워커 중복 알림 방지용)
+     * 포그라운드 동기화에서 확인한 항목 ID를 워커의 알림 이력에 병합 (워커 중복 알림 방지용).
+     * 앱은 과제·강의·퀴즈와 과목 공지 ID를 함께 넘기므로 공지도 확인한 것으로 표시
      */
     @PluginMethod
     public void markItemsSeen(PluginCall call) {
@@ -187,9 +191,46 @@ public class BackgroundSyncPlugin extends Plugin {
         prefs.edit()
                 .putStringSet(BackgroundSyncWorker.PREF_SEEN_ITEM_IDS, seen)
                 .putBoolean(BackgroundSyncWorker.PREF_HAS_SEEDED, true)
+                .putBoolean(BackgroundSyncWorker.PREF_NOTICES_SEEDED, true)
                 .apply();
         DebugLog.log(getContext(), "plugin", "markItemsSeen +" + (ids != null ? ids.length() : 0) + " (total " + seen.size() + ")");
         call.resolve();
+    }
+
+    /**
+     * 앱 알림 설정을 워커에 전달 (푸시 전체 / 새 과제·강의·퀴즈 / 새 공지)
+     */
+    @PluginMethod
+    public void setNotificationPrefs(PluginCall call) {
+        getContext().getSharedPreferences(BackgroundSyncWorker.PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(BackgroundSyncWorker.PREF_NOTIFY_PUSH, call.getBoolean("push", true))
+                .putBoolean(BackgroundSyncWorker.PREF_NOTIFY_ITEMS, call.getBoolean("newItems", true))
+                .putBoolean(BackgroundSyncWorker.PREF_NOTIFY_NOTICES, call.getBoolean("newNotices", true))
+                .apply();
+        call.resolve();
+    }
+
+    /**
+     * 마감 알림 목록 전체 교체 (앱 동기화 결과). 워커는 이 목록을 이어서 고침 → DeadlineReminders
+     * items: [{ id, kind: assignment|quiz|lecture, courseNm, title, deadlineStr, deadlineMs }]
+     */
+    @PluginMethod
+    public void syncReminders(PluginCall call) {
+        JSArray arr = call.getArray("items");
+        java.util.List<DeadlineReminders.Item> items = new java.util.ArrayList<>();
+        if (arr != null) {
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject o = arr.optJSONObject(i);
+                if (o == null) continue;
+                DeadlineReminders.Item it = DeadlineReminders.Item.fromJson(o);
+                if (!it.id.isEmpty() && it.deadlineMs > 0) items.add(it);
+            }
+        }
+        DeadlineReminders.replaceAll(getContext(), items,
+                call.getBoolean("enabled", true), call.getBoolean("dayBefore", true), call.getBoolean("threeHours", true));
+        JSObject ret = new JSObject();
+        ret.put("count", items.size());
+        call.resolve(ret);
     }
 
     /**

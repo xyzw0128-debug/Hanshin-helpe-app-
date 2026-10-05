@@ -6,6 +6,19 @@ import {
   parseDatasets,
 } from '../src/services/nexacroClient.js';
 import fs from 'fs';
+
+// HAR 캡처 폴더 (토큰·개인정보가 있어 저장소에 넣지 않음). 폴더를 옮겨도 찾도록 후보를 차례로 확인 (HS_HAR_DIR로 지정 가능)
+const HAR_DIRS = [
+  process.env.HS_HAR_DIR,
+  '/home/lael/Downloads/개발/LMS알림봇/HAR캡처/hsackr',
+  '/home/lael/Downloads/hsackr',
+].filter(Boolean);
+const harFile = name => {
+  for (const dir of HAR_DIRS) {
+    if (fs.existsSync(`${dir}/${name}`)) return `${dir}/${name}`;
+  }
+  return `${HAR_DIRS[0]}/${name}`;
+};
 import {
   HsctisScraperService,
   getSubjectColorIndex,
@@ -616,7 +629,7 @@ console.log('\nTest 14: XML self-closing tags for Parameter and Col...');
 // -------------------------------------------------------------
 console.log('\nTest 15: LMS Portal Notices parsing from real HAR data...');
 {
-  const harPath = '/home/lael/Downloads/hsackr/lms.hs.ac.kr_Archive [26-10-01 00-55-40].har';
+  const harPath = harFile('lms.hs.ac.kr_Archive [26-10-01 00-55-40].har');
   if (fs.existsSync(harPath)) {
     const har = JSON.parse(fs.readFileSync(harPath, 'utf8'));
     const entry = har.log.entries.find(e => e.request.url.includes('MainView.dunet'));
@@ -862,7 +875,7 @@ console.log('\nTest 18: Timetable time slots & Graduation criteria mapping...');
 // -------------------------------------------------------------
 console.log('\nTest 19: Real HAR hsctis um72_0272005 (Entry 241) dataset parsing...');
 {
-  const harPath = '/home/lael/Downloads/hsackr/hsctis.hs.ac.kr_Archive [26-10-01 00-54-54].har';
+  const harPath = harFile('hsctis.hs.ac.kr_Archive [26-10-01 00-54-54].har');
   if (fs.existsSync(harPath)) {
     const har = JSON.parse(fs.readFileSync(harPath, 'utf8'));
     const entry241 = har.log.entries[241];
@@ -965,7 +978,7 @@ console.log('\nTest 21: LmsScraperService.calculateDDay parsing and precise calc
 // -------------------------------------------------------------
 console.log('\nTest 22: Real HAR doTodoList.dunet parsing with to_do_type=all...');
 {
-  const harPath = '/home/lael/Downloads/hsackr/lms.hs.ac.kr_Archive [26-10-02 18-36-01].har';
+  const harPath = harFile('lms.hs.ac.kr_Archive [26-10-02 18-36-01].har');
   if (fs.existsSync(harPath)) {
     const har = JSON.parse(fs.readFileSync(harPath, 'utf8'));
     const entryAll = har.log.entries.filter(e => e.request.url.includes('doTodoList.dunet'))[3];
@@ -1014,7 +1027,7 @@ console.log('\nTest 22: Real HAR doTodoList.dunet parsing with to_do_type=all...
 // -------------------------------------------------------------
 console.log('\nTest 23: parseCompletedItemIds and submission state integration...');
 {
-  const harPath = '/home/lael/Downloads/hsackr/lms.hs.ac.kr_Archive [26-10-02 18-36-01].har';
+  const harPath = harFile('lms.hs.ac.kr_Archive [26-10-02 18-36-01].har');
   if (fs.existsSync(harPath)) {
     const har = JSON.parse(fs.readFileSync(harPath, 'utf8'));
     const entryComplete = har.log.entries.filter(e => e.request.url.includes('doTodoList.dunet'))[1];
@@ -1101,7 +1114,7 @@ console.log('\nTest 24: cleanLecName, parseLectureDeadline & Lecture sorting...'
 // -------------------------------------------------------------
 console.log('\nTest 25: Tab 9 clean notice date & Assignment active/expired sorting...');
 {
-  const harPath = '/home/lael/Downloads/hsackr/lms.hs.ac.kr_Archive [26-10-02 18-36-01].har';
+  const harPath = harFile('lms.hs.ac.kr_Archive [26-10-02 18-36-01].har');
   if (fs.existsSync(harPath)) {
     const har = JSON.parse(fs.readFileSync(harPath, 'utf8'));
     const entryAll = har.log.entries.filter(e => e.request.url.includes('doTodoList.dunet'))[3];
@@ -2056,7 +2069,7 @@ console.log('\nTest 33: Real timetable HAR parsing (ul72_0272017) & menu codes..
   const { NexacroClient, parseDatasets } = await import('../src/services/nexacroClient.js');
   const { mergeDayTimetable } = await import('../src/components/AcademicView.tsx');
 
-  const harPath = '/home/lael/Downloads/hsackr/hsctis.hs.ac.kr_Archive [26-10-04 19-00-00].har';
+  const harPath = harFile('hsctis.hs.ac.kr_Archive [26-10-04 19-00-00].har');
   if (fs.existsSync(harPath)) {
     const har = JSON.parse(fs.readFileSync(harPath, 'utf8'));
     const entry = har.log.entries.find(e => e.request.method === 'POST' && e.request.url.endsWith('/ul/ul72_0272017'));
@@ -2114,8 +2127,8 @@ console.log('\nTest 34: Graduation requirements (um72_0272004) + credits compute
 {
   const { HsctisScraperService } = await import('../src/services/hsctisScraper.js');
   const { parseDatasets } = await import('../src/services/nexacroClient.js');
-  const gradHar = '/home/lael/Downloads/hsackr/hsctis.hs.ac.kr_Archive [26-10-04 19-14-16].har';
-  const gradesHar = '/home/lael/Downloads/hsackr/hsctis.hs.ac.kr_Archive [26-10-01 00-54-54].har';
+  const gradHar = harFile('hsctis.hs.ac.kr_Archive [26-10-04 19-14-16].har');
+  const gradesHar = harFile('hsctis.hs.ac.kr_Archive [26-10-01 00-54-54].har');
   const postText = (file, path) =>
     JSON.parse(fs.readFileSync(file, 'utf8')).log.entries.find(
       e => e.request.method === 'POST' && e.request.url.endsWith(path)
@@ -2192,7 +2205,7 @@ console.log('\nTest 36: Materials (tab4) parsing & home card normalization...');
   const { LmsScraperService } = await import('../src/services/lmsScraper.js');
   const { normalizeHomeCards, DEFAULT_HOME_CARDS } = await import('../src/utils/homeCards.ts');
 
-  const harPath = '/home/lael/Downloads/hsackr/lms.hs.ac.kr_Archive [26-10-02 18-36-01].har';
+  const harPath = harFile('lms.hs.ac.kr_Archive [26-10-02 18-36-01].har');
   if (fs.existsSync(harPath)) {
     const entries = JSON.parse(fs.readFileSync(harPath, 'utf8')).log.entries.filter(e => e.request.url.includes('doTodoList'));
     const allHtml = entries.find(e => e.request.postData.text.includes('=all')).response.content.text;
@@ -2249,7 +2262,7 @@ console.log('\nTest 37: Kicked-session page detection (incl. EUC-KR mojibake)...
   assert.strictEqual(isKickedResponse('<p>다른 PC 에서 로그인 되었습니다.</p>'), false, 'alert·이동 구조가 없으면 무시');
   assert.strictEqual(isKickedResponse("<script>alert('PC 버전에서만 됩니다');</script>"), false, 'PC가 든 다른 alert는 무시');
 
-  const harPath = '/home/lael/Downloads/hsackr/lms.hs.ac.kr_Archive [26-10-04 22-31-46].har';
+  const harPath = harFile('lms.hs.ac.kr_Archive [26-10-04 22-31-46].har');
   if (fs.existsSync(harPath)) {
     const entries = JSON.parse(fs.readFileSync(harPath, 'utf8')).log.entries;
     const mainViews = entries.filter(e => e.request.url.includes('/main/MainView.dunet'));
@@ -2267,14 +2280,14 @@ console.log('\nTest 37: Kicked-session page detection (incl. EUC-KR mojibake)...
 // Test 38: 백그라운드 워커(Java TodoListParser)와 앱(TS)의 할일 항목 ID 일치
 //   ID가 다르면 워커가 앱이 이미 본 항목을 새 항목으로 보고 중복 알림 (예: 제목의 &middot;)
 // -------------------------------------------------------------
-console.log('\nTest 38: Java TodoListParser IDs match TS parseTodoListHtml...');
+console.log('\nTest 38: Java TodoListParser IDs match TS parseTodoListHtml (과제·강의·퀴즈·과목 공지)...');
 {
   const { execFileSync } = await import('child_process');
   const os = await import('os');
   const path = await import('path');
   const { LmsScraperService } = await import('../src/services/lmsScraper.js');
 
-  const harPath = '/home/lael/Downloads/hsackr/lms.hs.ac.kr_Archive [26-10-02 18-36-01].har';
+  const harPath = harFile('lms.hs.ac.kr_Archive [26-10-02 18-36-01].har');
   let hasJdk = true;
   try {
     execFileSync('javac', ['-version'], { stdio: 'ignore' });
@@ -2289,6 +2302,8 @@ console.log('\nTest 38: Java TodoListParser IDs match TS parseTodoListHtml...');
     <li class="tab tab2"><a href="javascript:fnGoContent('L','C3','01','');"><span class="subject">강의 <b>A</b>B<span class="badge">C</span> 끝 (30%)</span><div class="date"><span>2099.12.31</span></div></a></li>
     <li class="tab tab5"><a href="javascript:fnGoContent('R','C4','01','');"><span class="subject">　과제　제출&hellip;&#x2F;끝&rsquo;　</span></a></li>
     <li class="tab tab7"><a href="javascript:fnGoContent('Q','C5','01','');"><span data-class="subject">미끼1</span><span class="subject-title">미끼2</span><div class="subject">진짜 퀴즈 새 글이 등록되었습니다.</div></a></li>
+    <li class="tab tab9"><a href="javascript:fnGoContent('B','C6','01','777');"><span class="subject">휴강 안내 새 글이 등록되었습니다.</span><span class="lec_name">[2026] 과목</span><div class="date"><span>(등록일 : 2026.10.05)</span></div></a></li>
+    <li class="tab tab9"><a href="javascript:fnGoContent('B','C7','01','');"><span class="subject">[공지] 시험&middot;범위 &amp; 일정</span></a></li>
   </ul></div>`;
   const expectedSyntheticIds = [
     "202620HS00openclass0201_lecture_심리·아동학 '특강' & Q&A",
@@ -2296,10 +2311,12 @@ console.log('\nTest 38: Java TodoListParser IDs match TS parseTodoListHtml...');
     'C3_lecture_강의 ABC 끝',
     'C4_assignment_과제 제출…/끝’',
     'C5_quiz_진짜 퀴즈',
+    'C6_board_7_777',
+    'C7_board_7_[공지] 시험·범위 & 일정',
   ];
   {
     const r = LmsScraperService.parseTodoListHtml(synthetic);
-    const tsIds = [...r.assignments, ...r.lectures, ...r.quizzes].map(x => x.id).sort();
+    const tsIds = [...r.assignments, ...r.lectures, ...r.quizzes, ...r.notices].map(x => x.id).sort();
     assert.deepStrictEqual(tsIds, [...expectedSyntheticIds].sort(), 'TS(정규식 경로)가 DOM textContent와 같은 ID를 내야 함');
   }
 
@@ -2334,7 +2351,7 @@ public class Main { public static void main(String[] a) throws Exception {
     const tsIds = new Set();
     pages.forEach((html, i) => {
       const r = LmsScraperService.parseTodoListHtml(html);
-      for (const it of [...r.assignments, ...r.lectures, ...r.quizzes]) tsIds.add(`${String(i).padStart(2, '0')}.html\t${it.id}`);
+      for (const it of [...r.assignments, ...r.lectures, ...r.quizzes, ...r.notices]) tsIds.add(`${String(i).padStart(2, '0')}.html\t${it.id}`);
     });
 
     const onlyJava = [...javaIds].filter(x => !tsIds.has(x));
@@ -2457,8 +2474,93 @@ console.log('\nTest 41: Release build policy & report log...');
   console.log('  -> Test 41 Release policy & report log PASSED');
 }
 
+// -------------------------------------------------------------
+// Test 42: 기본 기능 — 새 버전 비교, 마감 알림 대상, 뒤로가기 순서·화면 기록, LMS 검색
+// -------------------------------------------------------------
+console.log('\nTest 42: Update check, reminders, back navigation, search...');
+{
+  const { compareVersions } = await import('../src/services/updateCheck.ts');
+  assert.ok(compareVersions('1.3.0', '1.2.0') > 0);
+  assert.ok(compareVersions('v1.10.0', '1.9.9') > 0, '두 자리 버전도 숫자로 비교');
+  assert.strictEqual(compareVersions('v1.2.0', '1.2'), 0, 'v 접두사·생략된 0 무시');
+  assert.ok(compareVersions('1.2.0', '1.2.1') < 0);
+
+  // 마감 알림 대상: 미제출 과제·퀴즈 + 미수강 강의 중 마감이 남은 것 (강의 제목의 진도율은 뺌)
+  const { buildReminderItems } = await import('../src/utils/lmsItems.ts');
+  const now = new Date(2026, 9, 5, 12, 0).getTime();
+  const iso = (d, h = 23, m = 59) => new Date(2026, 9, d, h, m).toISOString();
+  const items = buildReminderItems(
+    [
+      { id: 'a1', courseNm: '과목A', title: '보고서', deadlineStr: '2026.10.07 23:59', deadlineDate: iso(7), isSubmitted: false },
+      { id: 'a2', courseNm: '과목A', title: '제출함', deadlineStr: '', deadlineDate: iso(7), isSubmitted: true },
+      { id: 'a3', courseNm: '과목B', title: '지난 과제', deadlineStr: '', deadlineDate: iso(4), isSubmitted: false },
+      { id: 'q1', courseNm: '과목B', title: '[퀴즈] 1주차', deadlineStr: '', deadlineDate: iso(6), isSubmitted: false },
+      { id: 'a4', courseNm: '과목C', title: '기한 없음', deadlineStr: '', deadlineDate: null, isSubmitted: false },
+    ],
+    [
+      { id: 'l1', courseNm: '과목A', title: '3주차 강의 (45%)', periodStr: '2026.10.01 00:00 ~ 2026.10.08 23:59', isAttended: false },
+      { id: 'l2', courseNm: '과목A', title: '2주차 강의 (100%)', periodStr: '2026.10.01 ~ 2026.10.08', isAttended: true },
+      { id: 'l3', courseNm: '과목A', title: '1주차 강의', periodStr: '2026.09.01 ~ 2026.09.08', isAttended: false },
+    ],
+    now
+  );
+  assert.deepStrictEqual(
+    items.map(i => [i.id, i.kind]),
+    [['a1', 'assignment'], ['q1', 'quiz'], ['l1', 'lecture']]
+  );
+  assert.strictEqual(items.find(i => i.id === 'l1').title, '3주차 강의', '강의 진도율은 제목에서 뺌');
+  assert.strictEqual(items.find(i => i.id === 'l1').deadlineMs, new Date(2026, 9, 8, 23, 59).getTime());
+
+  // 화면 기록: 홈으로 가면 비움, 같은 화면은 한 번만, 이전 화면부터 거슬러 올라감
+  const { nextNavHistory } = await import('../src/utils/navHistory.ts');
+  const v = (tab, lmsSub = 'assignments', academic = 'timetable') => ({ tab, lmsSub, academic });
+  let h = [];
+  h = nextNavHistory(h, v('home'), v('lms'));
+  h = nextNavHistory(h, v('lms'), v('lms', 'notices'));
+  h = nextNavHistory(h, v('lms', 'notices'), v('academics'));
+  assert.deepStrictEqual(h, [v('home'), v('lms'), v('lms', 'notices')]);
+  h = nextNavHistory(h, v('academics'), v('lms'));
+  assert.deepStrictEqual(h, [v('home'), v('lms', 'notices'), v('academics')], 'LMS로 돌아오면 기록의 LMS는 빠짐');
+  assert.deepStrictEqual(nextNavHistory(h, v('lms'), v('lms')), h, '같은 화면이면 그대로');
+  assert.deepStrictEqual(nextNavHistory(h, v('lms'), v('home')), [], '홈 탭으로 가면 비움');
+
+  // 뒤로가기: 가장 나중에 연 창 → 먼저 연 창 → 이전 화면(root) → 없으면 false(종료 안내)
+  const backNav = await import('../src/services/backNav.ts');
+  const calls = [];
+  let rootLeft = 1;
+  backNav.setRootBack(true, () => {
+    if (rootLeft === 0) return false;
+    rootLeft--;
+    calls.push('root');
+    return true;
+  });
+  const offSubpage = backNav.pushBackHandler(() => calls.push('subpage'));
+  const offSheet = backNav.pushBackHandler(() => calls.push('sheet'));
+  assert.strictEqual(backNav.canGoBack(), true);
+  assert.strictEqual(backNav.handleBack(), true);
+  offSheet();
+  assert.strictEqual(backNav.handleBack(), true);
+  offSubpage();
+  assert.strictEqual(backNav.handleBack(), true);
+  assert.strictEqual(backNav.handleBack(), false, '돌아갈 곳이 없으면 종료 안내');
+  assert.deepStrictEqual(calls, ['sheet', 'subpage', 'root']);
+  backNav.setRootBack(false, () => false);
+  assert.strictEqual(backNav.canGoBack(), false, '홈에서는 네이티브가 두 번 눌러 종료');
+
+  // LMS 검색: 띄어 쓴 낱말이 모두 제목·과목명에 있으면 일치 (대소문자·띄어쓰기 무시)
+  const { matchesQuery } = await import('../src/components/LmsView.tsx');
+  const it = { title: 'Python 프로그래밍 과제 2', courseNm: '컴퓨터 개론' };
+  assert.ok(matchesQuery(it, 'python 과제'));
+  assert.ok(matchesQuery(it, '컴퓨터개론'), '과목명 띄어쓰기 무시');
+  assert.ok(matchesQuery(it, '과제 컴퓨터'), '제목과 과목명에 나뉘어 있어도 일치');
+  assert.ok(matchesQuery(it, '  '), '빈 검색어는 모두 일치');
+  assert.ok(!matchesQuery(it, '과제 자바'), '낱말 하나라도 없으면 불일치');
+
+  console.log('  -> Test 42 Basic features PASSED');
+}
+
 console.log('\n======================================================');
-console.log('🎉 ALL HSCTIS, NEXACRO, LMS NOTICES, TODOLIST, NOTIFICATIONS & DDAY TESTS PASSED! (41/41)');
+console.log('🎉 ALL HSCTIS, NEXACRO, LMS NOTICES, TODOLIST, NOTIFICATIONS & DDAY TESTS PASSED! (42/42)');
 console.log('======================================================\n');
 
 

@@ -9,7 +9,7 @@ interface SubpageLayoutProps {
 
 /**
  * 설정·홈 편집·앱 정보 같은 하위 화면 공통 레이아웃 (하단 탭을 덮는 전체 화면)
- * 안드로이드 뒤로가기는 App의 history 처리로 onBack과 동일하게 동작
+ * 안드로이드 뒤로가기는 onBack과 같게 동작 (App에서 services/backNav.ts의 useBackHandler로 등록)
  */
 export const SubpageLayout: React.FC<SubpageLayoutProps> = ({ title, onBack, children }) => (
   <div className="absolute inset-0 z-30 flex flex-col bg-zinc-50 dark:bg-zinc-950">

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ClipboardCopy, RefreshCw, Share2, Trash2, FileText } from 'lucide-react';
+import { ClipboardCopy, RefreshCw, Share2, Trash2, FileText, ChevronRight, ExternalLink, Info } from 'lucide-react';
 import pkg from '../../package.json';
 import { getLaunchLogs } from '../utils/campusLauncher';
 import {
@@ -11,6 +11,8 @@ import {
   clearDebugLogs,
 } from '../services/debugLog';
 import { Toggle } from './Toggle';
+import { checkForUpdate, ISSUES_PAGE, UpdateInfo } from '../services/updateCheck';
+import { openExternal } from '../services/appShell';
 
 /** 배포 앱에서 버전을 이만큼 연속으로 누르면 숨김 메뉴(문제 신고용 로그)가 열림 */
 const REVEAL_TAPS = 7;
@@ -77,7 +79,58 @@ const LogTools: React.FC = () => {
   );
 };
 
-export const AppInfoView: React.FC = () => {
+const LinkRow: React.FC<{ label: string; value?: string; external?: boolean; onClick: () => void }> = ({
+  label,
+  value,
+  external,
+  onClick,
+}) => (
+  <button onClick={onClick} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left">
+    <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{label}</span>
+    <span className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+      {value}
+      {external ? (
+        <ExternalLink className="w-3.5 h-3.5 text-zinc-300 dark:text-zinc-600" />
+      ) : (
+        <ChevronRight className="w-4 h-4 text-zinc-300 dark:text-zinc-600" />
+      )}
+    </span>
+  </button>
+);
+
+/** 업데이트 확인 (누를 때마다 GitHub 최신 릴리스를 새로 확인) */
+const UpdateRow: React.FC = () => {
+  const [status, setStatus] = useState<'idle' | 'checking' | 'latest' | 'error'>('idle');
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+
+  const check = async () => {
+    if (update) {
+      openExternal(update.url);
+      return;
+    }
+    setStatus('checking');
+    try {
+      const info = await checkForUpdate({ force: true });
+      setUpdate(info);
+      setStatus(info ? 'idle' : 'latest');
+    } catch {
+      setStatus('error');
+    }
+  };
+
+  const value = update
+    ? `${update.version} 받기`
+    : status === 'checking'
+    ? '확인 중…'
+    : status === 'latest'
+    ? '최신 버전이에요'
+    : status === 'error'
+    ? '확인 실패 (다시 시도)'
+    : '';
+  return <LinkRow label="업데이트 확인" value={value} external={!!update} onClick={check} />;
+};
+
+export const AppInfoView: React.FC<{ onOpenLicenses: () => void }> = ({ onOpenLicenses }) => {
   const debugBuild = isDebugBuild();
   const [reportOn, setReportOn] = useState(isDebugLogEnabled());
   // 배포 앱: 로그를 켜 둔 상태면 바로 보이고, 아니면 버전을 7번 눌러야 보임
@@ -96,6 +149,28 @@ export const AppInfoView: React.FC = () => {
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm divide-y divide-zinc-100 dark:divide-zinc-800">
         <Row label="버전" value={pkg.version} onClick={onVersionTap} />
         <Row label="빌드" value={debugBuild ? '디버그' : '릴리스'} />
+        <UpdateRow />
+      </div>
+
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm divide-y divide-zinc-100 dark:divide-zinc-800">
+        <LinkRow label="문의·오류 제보" value="GitHub" external onClick={() => openExternal(ISSUES_PAGE)} />
+        <LinkRow label="오픈소스 라이선스" onClick={onOpenLicenses} />
+      </div>
+
+      <div className="p-3.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl space-y-2.5">
+        <div className="flex items-start gap-2">
+          <Info className="w-4 h-4 text-hs-700 dark:text-hs-300 flex-shrink-0 mt-0.5" />
+          <p className="text-[11.5px] text-zinc-700 dark:text-zinc-300 leading-relaxed">
+            <b>한신대학교 공식 앱이 아니에요.</b> 학생이 만든 앱으로, 학교 LMS·종합정보시스템 화면의 정보를 대신 불러와 보여 줘요.
+          </p>
+        </div>
+        <div className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed space-y-1 pl-6">
+          <p>· 아이디와 비밀번호는 이 휴대폰에만 암호화해 저장하고, 학교 서버(sso2·lms·hsctis.hs.ac.kr) 로그인에만 써요.</p>
+          <p>· 과제·공지·성적 같은 정보도 휴대폰에만 저장되고 다른 곳으로 보내지 않아요.</p>
+          <p>· 새 버전 확인 때 GitHub에 접속하지만 개인정보는 보내지 않아요.</p>
+          {debugBuild && <p>· (디버그 빌드) Gemini 요약·디스코드 알림을 켜면 공지 제목·본문이 해당 서비스로 전송돼요.</p>}
+          <p>· 로그아웃하면 저장된 비밀번호와 화면 데이터가 지워져요.</p>
+        </div>
       </div>
 
       {/* 디버그 빌드: 개발용 로그 (항상 기록) */}

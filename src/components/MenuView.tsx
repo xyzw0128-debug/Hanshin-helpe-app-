@@ -23,7 +23,7 @@ import { StudentProfile } from '../types';
 import { HomeNavigateTarget } from './HomeView';
 import { launchCampusApp } from '../utils/campusLauncher';
 
-export type MenuSubpage = 'settings' | 'homeEdit' | 'appInfo';
+export type MenuSubpage = 'settings' | 'homeEdit' | 'appInfo' | 'licenses';
 
 interface MenuViewProps {
   profile: StudentProfile;

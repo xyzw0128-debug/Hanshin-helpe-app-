@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AssignmentItem, NoticeItem } from '../types';
-import { ExternalLink, Paperclip } from 'lucide-react';
+import { ExternalLink, Paperclip, CalendarPlus } from 'lucide-react';
 import { LMS_BASE } from '../services/lmsAuth';
+import { addDeadlineToCalendar } from '../services/appShell';
 
 interface DetailBottomSheetProps {
   assignment: AssignmentItem | null;
@@ -15,7 +16,10 @@ export const DetailBottomSheet: React.FC<DetailBottomSheetProps> = ({
   onClose,
 }) => {
   const isOpen = Boolean(assignment || notice);
-  
+  // 마감이 남은 미제출 과제·퀴즈만 캘린더에 추가 가능
+  const deadlineMs = assignment?.deadlineDate ? new Date(assignment.deadlineDate).getTime() : NaN;
+  const canAddCalendar = !!assignment && !assignment.isSubmitted && deadlineMs > Date.now();
+
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const startYRef = useRef(0);
@@ -167,6 +171,23 @@ export const DetailBottomSheet: React.FC<DetailBottomSheetProps> = ({
             <ExternalLink className="w-3.5 h-3.5" />
             LMS에서 확인하기
           </a>
+          {canAddCalendar && (
+            <button
+              onClick={() =>
+                addDeadlineToCalendar({
+                  title: assignment!.title,
+                  courseNm: assignment!.courseNm,
+                  deadlineMs,
+                  deadlineStr: assignment!.deadlineStr,
+                }).catch(e => alert(e?.message || '캘린더를 열 수 없습니다.'))
+              }
+              className="px-3.5 py-3 bg-hs-50 dark:bg-hs-950/60 text-hs-700 dark:text-hs-300 font-bold text-xs rounded-xl flex items-center gap-1"
+              aria-label="캘린더에 추가"
+            >
+              <CalendarPlus className="w-3.5 h-3.5" />
+              캘린더
+            </button>
+          )}
           <button
             onClick={onClose}
             className="px-5 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs rounded-xl"

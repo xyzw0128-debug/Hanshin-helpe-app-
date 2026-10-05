@@ -22,10 +22,13 @@ body {
 }
 
 .bottom-sheet {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0s;
 }
+/* 닫힌 시트는 내려간 뒤 완전히 숨김 (입력란 포커스 등으로 바깥 틀이 밀려도 아래로 삐져나오지 않게) */
 .bottom-sheet.closed {
   transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 0.25s;
 }
 
 .toast-anim {

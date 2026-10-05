@@ -52,6 +52,31 @@ export function toNotificationNumericId(
   return hashNotificationId(defaultSeed);
 }
 
+/** 알림을 눌렀을 때 열 화면 (App의 openTarget과 같은 형식, 예: open "lms:notices" + itemId) */
+export interface NotificationOpenExtra {
+  open: string;
+  itemId?: string;
+}
+
+/** 앱이 보낸 알림을 눌렀을 때 열 화면을 받음 (앱이 꺼져 있다가 알림으로 열린 경우도 전달됨) */
+export function onNotificationOpen(handler: (extra: NotificationOpenExtra) => void): () => void {
+  let remove: (() => void) | null = null;
+  let cancelled = false;
+  LocalNotifications.addListener('localNotificationActionPerformed', ev => {
+    const extra = ev?.notification?.extra;
+    if (extra && typeof extra.open === 'string') handler(extra as NotificationOpenExtra);
+  })
+    .then(h => {
+      if (cancelled) h.remove();
+      else remove = () => h.remove();
+    })
+    .catch(() => undefined);
+  return () => {
+    cancelled = true;
+    remove?.();
+  };
+}
+
 export class NotificationService {
   public static async requestPermission(): Promise<boolean> {
     try {
@@ -77,7 +102,8 @@ export class NotificationService {
   public static async sendLocalNotification(
     title: string,
     body: string,
-    id?: number | string
+    id?: number | string,
+    extra: NotificationOpenExtra | null = null
   ): Promise<number> {
     const numericId = toNotificationNumericId(id, `${title}:${body}`);
     try {
@@ -90,7 +116,7 @@ export class NotificationService {
             schedule: { at: new Date(Date.now() + 100) },
             sound: 'beep.wav',
             actionTypeId: '',
-            extra: null,
+            extra,
           },
         ],
       });

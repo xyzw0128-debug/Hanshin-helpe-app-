@@ -25,7 +25,7 @@ public final class TodoListParser {
 
     public static class TodoItem {
         public String id;
-        public String tab; // tab5, tab2, tab7, tab8
+        public String tab; // tab5(과제), tab2(온라인 강의), tab7·tab8(퀴즈·시험), tab9(과목 공지)
         public String courseId;
         public String courseNm;
         public String title;
@@ -92,7 +92,8 @@ public final class TodoListParser {
             String tabClass = liMatcher.group(1).toLowerCase(Locale.ROOT);
             String liContent = liMatcher.group(2);
 
-            if (!tabClass.equals("tab5") && !tabClass.equals("tab2") && !tabClass.equals("tab7") && !tabClass.equals("tab8")) {
+            if (!tabClass.equals("tab5") && !tabClass.equals("tab2") && !tabClass.equals("tab7") && !tabClass.equals("tab8")
+                    && !tabClass.equals("tab9")) {
                 continue;
             }
 
@@ -133,6 +134,9 @@ public final class TodoListParser {
                 if (parseDeadlineMs(dateStr) < now) {
                     isPending = false; // 수강 기간 만료 강의 제외
                 }
+            } else if (tabClass.equals("tab9")) {
+                // 과목 공지: 앱은 공지 게시판 번호 7로 ID를 만든다 (lmsScraper.ts parseTodoListHtml)
+                id = courseId + "_board_7_" + (contentId.isEmpty() ? title : contentId);
             } else { // tab7, tab8: 퀴즈 및 시험
                 id = courseId + "_quiz_" + (contentId.isEmpty() ? title : contentId);
                 if (parseDeadlineMs(dateStr) < now) {

@@ -1,8 +1,9 @@
 import React from 'react';
 import { LectureItem } from '../types';
-import { Check, Flame } from 'lucide-react';
+import { Check, Flame, CalendarPlus } from 'lucide-react';
 import { LmsScraperService, parseLectureDeadline, stripLectureProgress } from '../services/lmsScraper';
 import { formatDeadlineDateTime } from '../utils/date';
+import { addDeadlineToCalendar } from '../services/appShell';
 
 interface LectureCardProps {
   item: LectureItem;
@@ -82,9 +83,23 @@ const LectureCardInner: React.FC<LectureCardProps> = ({ item }) => {
           {hasDeadline ? `${formatDeadlineDateTime(deadlineMs)} 종료` : item.periodStr || '종료시한 정보 없음'}
         </span>
         {dday && !expired && (
-          <b className={`flex-shrink-0 ${isUrgent ? 'text-red-600 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}`}>
-            {dday.timeLeftText}
-          </b>
+          <span className="flex items-center gap-1.5 flex-shrink-0">
+            <b className={isUrgent ? 'text-red-600 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>{dday.timeLeftText}</b>
+            <button
+              onClick={() =>
+                addDeadlineToCalendar({
+                  title: stripLectureProgress(item.title),
+                  courseNm: item.courseNm,
+                  deadlineMs,
+                  deadlineStr: item.periodStr,
+                }).catch(e => alert(e?.message || '캘린더를 열 수 없습니다.'))
+              }
+              className="p-1 -m-1 text-zinc-400 hover:text-hs-700 dark:hover:text-hs-300"
+              aria-label="캘린더에 추가"
+            >
+              <CalendarPlus className="w-4 h-4" />
+            </button>
+          </span>
         )}
       </div>
     </div>
