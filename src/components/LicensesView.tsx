@@ -16,7 +16,6 @@ const LIBRARIES: Array<{ name: string; license: 'MIT' | 'ISC' | 'Apache-2.0'; co
     copyright: 'Copyright (c) Lucide Contributors 2022, portions Cole Bemis 2013-2022 (Feather, MIT)',
   },
   { name: 'AndroidX (AppCompat, Core, Activity, WorkManager 등)', license: 'Apache-2.0', copyright: 'Copyright The Android Open Source Project' },
-  { name: 'Material Icons (알림 아이콘)', license: 'Apache-2.0', copyright: 'Copyright Google LLC' },
   { name: 'Tailwind CSS (빌드 시 사용)', license: 'MIT', copyright: 'Copyright (c) Tailwind Labs, Inc.' },
 ];
 

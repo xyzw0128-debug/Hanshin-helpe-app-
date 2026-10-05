@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 앱 아이콘 전경: 한신 바이올렛(Pantone 2597C, #5C068C) 그러데이션 H. 108dp 중 가운데 안전 영역(66dp) 안에 둠 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M37,35H47V50H61V35H71V73H61V58H47V73H37Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="37"
+                android:startY="73"
+                android:endX="71"
+                android:endY="35"
+                android:startColor="#FF8A3FC4"
+                android:endColor="#FF5C068C" />
+        </aapt:attr>
+    </path>
+</vector>

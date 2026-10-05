@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 안드로이드 13+ 테마 아이콘(배경화면 색에 맞춰 칠함)용 단색 H -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M37,35H47V50H61V35H71V73H61V58H47V73H37Z" />
+</vector>
