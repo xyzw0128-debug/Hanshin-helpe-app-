@@ -123,7 +123,8 @@ public final class DeadlineReminders {
                 .apply();
         save(context, items);
         reschedule(context);
-        DebugLog.log(context, "reminder", "replaceAll items=" + items.size() + " enabled=" + enabled + " d1=" + d1 + " h3=" + h3);
+        DebugLog.log(context, "reminder", "replaceAll items=" + items.size() + " (" + countByKind(items) + ") enabled=" + enabled
+                + " d1=" + d1 + " h3=" + h3);
     }
 
     /**
@@ -134,10 +135,12 @@ public final class DeadlineReminders {
         List<Item> items = load(context);
         Set<String> known = new HashSet<>();
         int removed = 0;
+        List<Item> removedItems = new ArrayList<>();
         List<Item> next = new ArrayList<>();
         for (Item it : items) {
             if (completedIds.contains(it.id)) {
                 removed++;
+                removedItems.add(it);
                 continue;
             }
             next.add(it);
@@ -164,7 +167,8 @@ public final class DeadlineReminders {
         if (removed > 0 || added > 0) save(context, next);
         // 바뀐 것이 없어도 다시 예약: 강제 종료·정확한 알람 권한 해제 때 시스템이 알람을 지우므로 확인할 때마다 복구
         reschedule(context);
-        DebugLog.log(context, "reminder", "worker result: +" + added + " -" + removed + " (total " + next.size() + ")");
+        DebugLog.log(context, "reminder", "worker result: +" + added + " -" + removed
+                + (removed > 0 ? " (completed: " + countByKind(removedItems) + ")" : "") + " (total " + next.size() + ")");
     }
 
     static String kindOfTab(String tab) {
@@ -208,18 +212,34 @@ public final class DeadlineReminders {
         Set<String> scheduled = new HashSet<>();
         boolean enabled = p.getBoolean(KEY_ENABLED, true);
         long now = System.currentTimeMillis();
+        // 진단 로그용: 가장 먼저 울릴 알람
+        long nextAt = Long.MAX_VALUE;
+        String nextWhat = "";
         if (enabled) {
             for (Item it : load(context)) {
-                if (p.getBoolean(KEY_D1, true)) schedule(context, am, it, SLOT_D1, it.deadlineMs - DAY_MS, now, scheduled);
-                if (p.getBoolean(KEY_H3, true)) schedule(context, am, it, SLOT_H3, it.deadlineMs - H3_MS, now, scheduled);
+                long d1At = it.deadlineMs - DAY_MS;
+                long h3At = it.deadlineMs - H3_MS;
+                if (p.getBoolean(KEY_D1, true) && schedule(context, am, it, SLOT_D1, d1At, now, scheduled) && d1At < nextAt) {
+                    nextAt = d1At;
+                    nextWhat = it.kind + " " + SLOT_D1;
+                }
+                if (p.getBoolean(KEY_H3, true) && schedule(context, am, it, SLOT_H3, h3At, now, scheduled) && h3At < nextAt) {
+                    nextAt = h3At;
+                    nextWhat = it.kind + " " + SLOT_H3;
+                }
             }
         }
         p.edit().putStringSet(KEY_SCHEDULED, scheduled).apply();
+        boolean exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms();
+        DebugLog.log(context, "reminder", "scheduled " + scheduled.size() + " alarms (enabled=" + enabled + ", exact=" + exact + ")"
+                + (nextAt == Long.MAX_VALUE ? "" : ", next "
+                + new java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.KOREA).format(new java.util.Date(nextAt)) + " " + nextWhat));
         DeadlineWidgetProvider.refreshAll(context);
     }
 
-    private static void schedule(Context context, AlarmManager am, Item it, String slot, long at, long now, Set<String> scheduled) {
-        if (at <= now) return;
+    /** 알람 하나 예약. 예약했으면 true (이미 지난 시각이거나 실패하면 false) */
+    private static boolean schedule(Context context, AlarmManager am, Item it, String slot, long at, long now, Set<String> scheduled) {
+        if (at <= now) return false;
         Uri uri = alarmUri(it.id, slot);
         PendingIntent pi = PendingIntent.getBroadcast(context, 0, alarmIntent(context, uri, it.id, slot),
                 PendingIntent.FLAG_UPDATE_CURRENT | immutableFlag());
@@ -233,9 +253,22 @@ public final class DeadlineReminders {
                 am.setExact(AlarmManager.RTC_WAKEUP, at, pi);
             }
             scheduled.add(uri.toString());
+            return true;
         } catch (SecurityException e) {
             DebugLog.log(context, "reminder", "schedule failed: " + e.getMessage());
+            return false;
         }
+    }
+
+    /** 진단 로그용 "assignment 2, lecture 1" */
+    private static String countByKind(List<Item> items) {
+        int a = 0, q = 0, l = 0;
+        for (Item it : items) {
+            if (KIND_LECTURE.equals(it.kind)) l++;
+            else if (KIND_QUIZ.equals(it.kind)) q++;
+            else a++;
+        }
+        return "assignment " + a + ", quiz " + q + ", lecture " + l;
     }
 
     private static Uri alarmUri(String itemId, String slot) {
@@ -258,6 +291,7 @@ public final class DeadlineReminders {
     /** 알람 시각에 호출: 항목이 아직 목록에 있고 마감 전일 때만 알림 */
     static void fire(Context context, String itemId, String slot) {
         SharedPreferences p = prefs(context);
+        DebugLog.log(context, "reminder", "alarm " + slot + " received (enabled=" + p.getBoolean(KEY_ENABLED, true) + ")");
         if (!p.getBoolean(KEY_ENABLED, true)) return;
         if (SLOT_D1.equals(slot) && !p.getBoolean(KEY_D1, true)) return;
         if (SLOT_H3.equals(slot) && !p.getBoolean(KEY_H3, true)) return;

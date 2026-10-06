@@ -71,6 +71,15 @@ function append(line: string): void {
   writeLines(lines);
 }
 
+/** 진단 로그용 지금 네트워크 종류 (WebView가 알려 주는 값: wifi, cellular 등). "다른 PC 로그인" 오탐과 네트워크 전환의 관계 확인용 */
+export function networkType(): string {
+  try {
+    return (navigator as any).connection?.type || '?';
+  } catch {
+    return '?';
+  }
+}
+
 /**
  * 디버그 이벤트 기록 (예: debugLog('sync', '동기화 시작', { silent: true }))
  */

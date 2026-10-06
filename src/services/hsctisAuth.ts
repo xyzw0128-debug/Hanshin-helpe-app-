@@ -1,6 +1,7 @@
 import { HttpResponse } from '@capacitor/core';
 import { HttpClient } from './httpClient';
 import { LmsAuthService } from './lmsAuth';
+import { debugLog, networkType } from './debugLog';
 
 export const SSO_CLIENT_ID = '5f0869ab6c0f4178874754fbd6c5bf64';
 export const SSO_BASE = 'https://sso2.hs.ac.kr';
@@ -67,6 +68,8 @@ export class HsctisAuthService {
       return true;
     }
 
+    // 종합정보도 같은 SSO로 로그인하므로, LMS 세션이 이 직후 끊기는지 확인할 수 있게 시점을 기록
+    debugLog('auth', `종합정보 SSO 로그인 수행 (force=${force})`, { net: networkType() });
     const clientIp = await this.getLoginIp();
 
     if (typeof crypto === 'undefined' || !crypto.getRandomValues) {
@@ -272,6 +275,7 @@ export class HsctisAuthService {
     this.studentNo = resolvedStudentNo;
     this.studentName = resolvedStudentName;
     this.currentAccessToken = accessToken;
+    debugLog('auth', '종합정보 SSO 로그인 완료');
     return true;
   }
 

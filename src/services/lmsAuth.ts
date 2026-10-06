@@ -1,6 +1,6 @@
 import { HttpResponse } from '@capacitor/core';
 import { HttpClient } from './httpClient';
-import { debugLog } from './debugLog';
+import { debugLog, networkType } from './debugLog';
 import { isKickedResponse, markSessionOk } from './sessionGuard';
 import { saveLmsSession } from './backgroundSync';
 
@@ -135,7 +135,7 @@ export class LmsAuthService {
     }
 
     // SSO 로그인은 PC의 LMS 세션을 끊을 수 있으므로 호출 시점을 기록
-    debugLog('auth', `SSO 로그인 수행 (force=${force})`);
+    debugLog('auth', `SSO 로그인 수행 (force=${force})`, { net: networkType() });
 
     const clientIp = await this.getLoginIp();
 

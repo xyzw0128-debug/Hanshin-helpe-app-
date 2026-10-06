@@ -45,7 +45,8 @@ LMS·HSCTIS 엔드포인트와 로그인 흐름 상세는 `.claude/skills/lms-pr
 - **SSO 재로그인은 PC 세션을 끊는다**: `login()`은 `isSessionValid()`를 먼저 확인함. 로그인 호출을 늘리지 말 것.
 - **테스트는 실제 계정으로 학교 서버에 접속**한다. 반복 실행하거나 루프로 돌리지 말고, 실행 전에 사용자에게 확인.
 - **비밀 정보**: `.env`, `android/app/hs-lms.keystore`는 읽거나 수정하지 않음(hook과 deny 규칙으로 막혀 있음). 키스토어를 잃거나 망가뜨리면 기존 설치본에 업데이트를 배포할 수 없음.
-- 로그나 디버그 출력에 학번·비밀번호·쿠키가 들어가면 `debugLog.ts`의 `redactSensitive`를 거칠 것.
+- 로그나 디버그 출력에 학번·비밀번호·쿠키가 들어가면 `debugLog.ts`의 `redactSensitive`를 거칠 것. 세션을 구분해야 하면 값 대신 `DebugLog.sessionTag`(해시 앞 6자리)를 남김.
+- **네이티브에서 `HttpURLConnection`에 Cookie 헤더를 직접 넣지 말 것**(앱 프로세스가 떠 있을 때): Capacitor가 전역 `CookieHandler`를 등록해 두어 CookieManager 쿠키가 자동으로 한 줄 더 붙고, 두 줄이 되면 LMS가 모든 요청을 "잘못된 경로입니다"(HTTP 500)로 거부함. 워커는 핸들러가 없을 때(앱이 꺼진 프로세스)만 직접 넣음.
 - `tsconfig`는 `strict: false`. 린터·포매터는 없고, `.ts/.tsx`를 수정하면 hook이 `tsc --noEmit`을 자동 실행함.
 - `dist/`, `android/app/src/main/assets/public/`은 생성물이므로 직접 수정하지 말고 `src/`를 고친 뒤 다시 빌드.
 - 버전을 올릴 때는 `package.json`의 `version`과 `android/app/build.gradle`의 `versionCode`/`versionName`을 함께 수정.

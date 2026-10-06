@@ -15,7 +15,7 @@ export class HttpClient {
   /** 다른 곳 로그인으로 끊긴 LMS 세션의 1회성 안내 응답은 어느 요청에서 받든 기록 */
   private static inspect(options: HttpOptions, resp: HttpResponse): HttpResponse {
     if (options.url.includes('lms.hs.ac.kr') && isKickedResponse(resp?.data)) {
-      markKicked();
+      markKicked(options.url.replace(/^https?:\/\/[^/]+/, '').split('?')[0]);
     }
     return resp;
   }

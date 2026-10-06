@@ -1,5 +1,5 @@
 import { getBackgroundSyncStatus, recordSessionKicked } from './backgroundSync';
-import { debugLog } from './debugLog';
+import { debugLog, networkType } from './debugLog';
 
 /**
  * PC 세션 보호: "다른 곳에서 로그인 중" 판단 시 SSO 재로그인과 자동 동기화를 멈춘다.
@@ -68,11 +68,11 @@ export function isKickedResponse(body: unknown): boolean {
   return typeof body === 'string' && body.length <= KICKED_PAGE_MAX_LEN && KICKED_PAGE_PATTERN.test(body);
 }
 
-/** 서버가 "다른 PC 에서 로그인" 응답을 보냈을 때 호출 */
-export function markKicked(): void {
+/** 서버가 "다른 PC 에서 로그인" 응답을 보냈을 때 호출 (path: 그 응답을 받은 요청, 진단 로그용) */
+export function markKicked(path?: string): void {
   writeValue(KICKED_AT_KEY, String(Date.now()));
   recordSessionKicked(); // 워커의 멈춤 알림이 이유를 정확히 안내하도록
-  debugLog('guard', '서버 응답: 다른 PC 에서 로그인 되었습니다');
+  debugLog('guard', '서버 응답: 다른 PC 에서 로그인 되었습니다', { path, net: networkType() });
 }
 
 export function isSyncPaused(): boolean {
