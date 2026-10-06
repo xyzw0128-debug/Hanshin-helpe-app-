@@ -23,6 +23,7 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.CookieHandler;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -63,6 +64,9 @@ public class BackgroundSyncWorker extends Worker {
     public static final String PREF_SESSION_KICKED_AT = "lms_session_kicked_at";
     // "다른 PC" 응답 없이 세션 만료(302·로그인 필요)를 본 시각(epoch ms). 앱이 자연 만료로 보고 재로그인해도 되는지 판단
     public static final String PREF_SESSION_EXPIRED_AT = "lms_session_expired_at";
+    // 세션이 마지막으로 정상이던 때(앱의 로그인·동기화 직후, 워커 확인 성공)의 네트워크. 예: "wifi/210"
+    // 학교 서버는 Wi-Fi↔LTE처럼 인터넷 연결이 바뀌면 로그인을 푸는 것으로 보여(기기 로그 2026-10-06), 멈춤 알림 문구에 사용
+    public static final String PREF_SESSION_NET = "lms_session_net";
     // 안내 페이지: 짧은 응답 + alert('…PC…'); top.location=... (EUC-KR이라 한글은 깨질 수 있어 ASCII 구조로 판별)
     // 일반 페이지 본문에 "다른 PC에서 로그인" 문장이 있어도 걸리지 않게 구조와 길이를 함께 본다 (sessionGuard.ts와 같은 규칙)
     private static final Pattern KICKED_PAGE_PATTERN =
@@ -88,12 +92,16 @@ public class BackgroundSyncWorker extends Worker {
     // 서버가 Referer의 메뉴 ID(mnid)를 요구함: 빠지면 HTTP 500 (lmsScraper.ts의 MY_LECTURE_MNID와 동일, HAR 확인)
     private static final String MENU_URL = LMS_BASE + "/lms/myLecture/doListView.dunet?mnid=201008840728";
     private static final String TODO_REFERER = MENU_URL;
+    private static final String MAIN_URL = LMS_BASE + "/main/MainView.dunet";
     private static final String USER_AGENT =
             "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
     // 디버그 빌드 전용 테스트 모드: 15분 미만 주기는 PeriodicWork로 불가능하므로 OneTimeWork를 이어서 예약
     public static final String TEST_WORK_NAME = "lms_background_sync_test_work";
     public static final int MIN_PERIODIC_MINUTES = 15;
+
+    // 요청에 Cookie 헤더를 직접 넣을지 (앱이 떠 있어 전역 CookieHandler가 붙여 주면 false, runSync에서 정함)
+    private boolean manualCookieHeader = true;
 
     public BackgroundSyncWorker(@NonNull Context context, @NonNull WorkerParameters params) {
         super(context, params);
@@ -166,9 +174,28 @@ public class BackgroundSyncWorker extends Worker {
                 cookieSource = "saved copy";
             }
         }
-        // 쿠키 값은 기록하지 않고 출처/존재 여부만 기록
+        // 쿠키를 어떻게 붙일지: 앱이 떠 있는 프로세스면 Capacitor(CapacitorCookies)가 전역 CookieHandler를 등록해 두어
+        // HttpURLConnection이 CookieManager 쿠키를 알아서 붙인다. 이때 Cookie를 직접 넣으면 헤더가 두 줄이 되어
+        // 서버가 메인 화면까지 모든 요청을 "잘못된 경로입니다"(HTTP 500)로 거부함 (기기 로그·에뮬레이터 확인 2026-10-06).
+        // 그래서 핸들러가 있으면 직접 넣지 않고, 보관 사본을 쓸 때는 CookieManager에 먼저 복원해 핸들러가 같은 세션을 붙이게 함
+        manualCookieHeader = CookieHandler.getDefault() == null;
+        if (!manualCookieHeader && "saved copy".equals(cookieSource)) {
+            for (String pair : cookie.split(";")) {
+                String trimmed = pair.trim();
+                if (trimmed.contains("=")) cookieManager.setCookie(LMS_BASE, trimmed + "; Path=/");
+            }
+            cookieManager.flush();
+        }
+
+        // 쿠키 값은 기록하지 않고 출처·세션 표식(해시 앞자리)만 기록. 저장 당시와 지금의 네트워크를 함께 남겨
+        // "다른 PC 로그인" 오탐이 네트워크 전환(인터넷 주소 변경)과 관련 있는지 확인
         DebugLog.log(context, "worker", "session cookie: "
-                + (cookie != null && cookie.contains("JSESSIONID") ? "found via " + cookieSource : "none"));
+                + (cookie != null && cookie.contains("JSESSIONID") ? "found via " + cookieSource + " " + DebugLog.sessionTag(cookie) : "none")
+                + " | header " + (manualCookieHeader ? "manual" : "via app")
+                + " | saved " + DebugLog.sessionTag(prefs.getString(PREF_SESSION_COOKIE, null))
+                + " on " + prefs.getString(PREF_SESSION_NET, "?")
+                + " | now " + DebugLog.network(context)
+                + " | ok " + minutesAgo(prefs.getLong(PREF_SESSION_OK_AT, 0L)) + " ago");
 
         // 세션 쿠키가 없으면 PC 세션 보호를 위해 절대 재로그인하지 않고 조용히 종료
         if (cookie == null || !cookie.contains("JSESSIONID")) {
@@ -182,9 +209,9 @@ public class BackgroundSyncWorker extends Worker {
         String html;
         int httpCode;
         try {
-            // 2-1. "내 강의" 메뉴 진입: 브라우저·앱과 같은 순서. 메뉴를 거치지 않고 doTodoList만 부르면
-            //      세션이 정상이어도 "잘못된 경로입니다" HTTP 500 (기기 로그 2026-10-05 확인)
-            HttpResult menu = send(context, "GET", MENU_URL, LMS_BASE + "/main/MainView.dunet", cookie, null);
+            // 2-1. "내 강의" 메뉴 진입 후 할 일 목록: 브라우저·앱과 같은 순서
+            //      (2026-10-05에 doTodoList만 부르면 500이라 넣었으나, 그때의 500도 위의 Cookie 헤더 중복 때문이었을 가능성이 큼)
+            HttpResult menu = send(context, "GET", MENU_URL, MAIN_URL, cookie, null);
             DebugLog.log(context, "worker", "doListView(menu) HTTP " + menu.code);
             if (menu.code == 301 || menu.code == 302) {
                 markExpired(prefs);
@@ -192,6 +219,7 @@ public class BackgroundSyncWorker extends Worker {
                 updateStatus(context, "세션 만료 (앱 실행 시 자동 갱신)", 0);
                 return Result.success();
             }
+            if (isKickedResponse(menu.body)) DebugLog.log(context, "worker", "kicked page on doListView(menu)");
             if (isKickedResponse(menu.body) || menu.code >= 400) {
                 // 아래 3-1 / 3-2에서 같은 방식으로 기록
                 html = menu.body;
@@ -201,7 +229,8 @@ public class BackgroundSyncWorker extends Worker {
 
                 // 2-2. 할 일 목록
                 HttpResult todo = send(context, "POST", TODO_URL, TODO_REFERER, cookie, "to_do_type=proceedable");
-                DebugLog.log(context, "worker", "doTodoList(proceedable) HTTP " + todo.code);
+                DebugLog.log(context, "worker", "doTodoList(proceedable) HTTP " + todo.code
+                        + (isKickedResponse(todo.body) ? " (kicked page)" : ""));
                 if (todo.code == 301 || todo.code == 302) {
                     Log.d(TAG, "LMS session redirected (HTTP " + todo.code + "). Exiting silently to protect PC session.");
                     markExpired(prefs);
@@ -221,7 +250,8 @@ public class BackgroundSyncWorker extends Worker {
 
         // 3-1. 다른 곳(PC)의 로그인으로 세션이 끊김: 앱이 재로그인하지 않도록 기록하고 종료
         if (isKickedResponse(html)) {
-            DebugLog.log(context, "worker", "server says: logged in from another PC");
+            DebugLog.log(context, "worker", "server says: logged in from another PC (session " + DebugLog.sessionTag(cookie)
+                    + ", net " + DebugLog.network(context) + ", page: " + asciiHead(html) + ")");
             prefs.edit().putLong(PREF_SESSION_KICKED_AT, System.currentTimeMillis()).apply();
             notifySyncStopped(context, prefs);
             updateStatus(context, "다른 PC 로그인 감지 (동기화 멈춤)", 0);
@@ -253,7 +283,10 @@ public class BackgroundSyncWorker extends Worker {
             return Result.success();
         }
 
-        prefs.edit().putLong(PREF_SESSION_OK_AT, System.currentTimeMillis()).apply();
+        prefs.edit()
+                .putLong(PREF_SESSION_OK_AT, System.currentTimeMillis())
+                .putString(PREF_SESSION_NET, DebugLog.network(context))
+                .apply();
         clearSyncStopped(context, prefs);
         long now = System.currentTimeMillis();
 
@@ -276,7 +309,8 @@ public class BackgroundSyncWorker extends Worker {
             DebugLog.log(context, "worker", "doTodoList(complete) HTTP " + complete.code);
             if (isKickedResponse(complete.body)) {
                 // 두 요청 사이에 다른 곳 로그인으로 끊김: 1회성 안내라 여기서 기록하지 않으면 다음 회차에 자연 만료로 오인
-                DebugLog.log(context, "worker", "server says: logged in from another PC (complete list)");
+                DebugLog.log(context, "worker", "server says: logged in from another PC (complete list, session "
+                        + DebugLog.sessionTag(cookie) + ", net " + DebugLog.network(context) + ")");
                 prefs.edit().putLong(PREF_SESSION_KICKED_AT, System.currentTimeMillis()).apply();
                 notifySyncStopped(context, prefs);
             } else if (complete.code == 200 && complete.body.contains("todolist_pop")) {
@@ -369,11 +403,22 @@ public class BackgroundSyncWorker extends Worker {
         long okAt = prefs.getLong(PREF_SESSION_OK_AT, 0L);
         long kickedAt = prefs.getLong(PREF_SESSION_KICKED_AT, 0L);
         boolean kicked = kickedAt > 0 && kickedAt >= okAt;
+        // 마지막으로 정상이던 때와 지금 네트워크가 다르면, 다른 곳 로그인이 아니라 연결이 바뀌어 풀린 것으로 안내
+        String sessionNet = prefs.getString(PREF_SESSION_NET, null);
+        boolean networkChanged = !kicked && sessionNet != null && !sessionNet.equals(DebugLog.network(context));
 
-        String title = kicked ? "다른 곳에서 LMS에 로그인해서 확인을 멈췄어요" : "LMS 로그인이 만료돼 확인을 멈췄어요";
-        String text = kicked
-                ? "PC 쪽 로그인이 끊기지 않도록 새 과제 확인을 멈췄어요. 앱을 열어 다시 로그인하면 이어서 확인해요."
-                : "새 과제·강의 확인이 멈췄어요. 앱을 한 번 열면 다시 로그인해서 이어서 확인해요.";
+        String title;
+        String text;
+        if (kicked) {
+            title = "다른 곳에서 LMS에 로그인해서 확인을 멈췄어요";
+            text = "PC 쪽 로그인이 끊기지 않도록 새 과제 확인을 멈췄어요. 앱을 열어 다시 로그인하면 이어서 확인해요.";
+        } else if (networkChanged) {
+            title = "와이파이·데이터가 바뀌어 LMS 로그인이 풀렸어요";
+            text = "학교 서버는 인터넷 연결이 바뀌면 로그인을 풀 수 있어요. 앱을 한 번 열면 다시 로그인해서 이어서 확인해요.";
+        } else {
+            title = "LMS 로그인이 만료돼 확인을 멈췄어요";
+            text = "새 과제·강의 확인이 멈췄어요. 앱을 한 번 열면 다시 로그인해서 이어서 확인해요.";
+        }
 
         NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
@@ -408,7 +453,7 @@ public class BackgroundSyncWorker extends Worker {
                     .setContentIntent(pendingIntent)
                     .build());
             prefs.edit().putBoolean(PREF_STOP_NOTIFIED, true).apply();
-            DebugLog.log(context, "worker", "stop notification sent (kicked=" + kicked + ")");
+            DebugLog.log(context, "worker", "stop notification sent (kicked=" + kicked + ", networkChanged=" + networkChanged + ")");
         } catch (Exception ex) {
             DebugLog.log(context, "worker", "stop notification failed: " + ex.getMessage());
         }
@@ -420,6 +465,20 @@ public class BackgroundSyncWorker extends Worker {
         prefs.edit().putBoolean(PREF_STOP_NOTIFIED, false).apply();
         NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.cancel(SYNC_STOPPED_NOTIFICATION_ID);
+    }
+
+    /** 진단 로그용 "12min" 형식 (기록이 없으면 "never") */
+    static String minutesAgo(long at) {
+        if (at <= 0) return "never";
+        return ((System.currentTimeMillis() - at) / 60000) + "min";
+    }
+
+    /** 진단 로그용: 안내 페이지의 alert(...)부터, 깨지지 않는 ASCII 부분만 (한글은 EUC-KR이라 어차피 깨짐) */
+    static String asciiHead(String html) {
+        String ascii = html.replaceAll("\\s+", " ").replaceAll("[^\\x20-\\x7E]+", "?").trim();
+        int alert = ascii.indexOf("alert(");
+        if (alert > 0) ascii = ascii.substring(alert);
+        return ascii.length() > 160 ? ascii.substring(0, 160) : ascii;
     }
 
     /** 끊긴 세션의 첫 요청은 "다른 PC" 응답을 받으므로, 그 응답 없이 본 만료는 자연 만료(유휴 만료·서버 재시작 등) */
@@ -446,7 +505,7 @@ public class BackgroundSyncWorker extends Worker {
             conn.setConnectTimeout(15000);
             conn.setReadTimeout(15000);
             conn.setRequestProperty("User-Agent", USER_AGENT);
-            conn.setRequestProperty("Cookie", cookie);
+            if (manualCookieHeader) conn.setRequestProperty("Cookie", cookie);
             conn.setRequestProperty("Referer", referer);
             if (formBody != null) {
                 conn.setDoOutput(true);
@@ -483,6 +542,9 @@ public class BackgroundSyncWorker extends Worker {
                 }
                 cookieManager.flush();
                 String refreshed = cookieManager.getCookie(LMS_BASE);
+                String before = DebugLog.sessionTag(cookie);
+                String after = DebugLog.sessionTag(refreshed);
+                if (!before.equals(after)) DebugLog.log(context, "worker", "server set new session " + before + " -> " + after);
                 if (refreshed != null && refreshed.contains("JSESSIONID")) {
                     result.refreshedCookie = refreshed;
                     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

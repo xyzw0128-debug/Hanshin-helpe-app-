@@ -104,10 +104,12 @@ public class BackgroundSyncPlugin extends Plugin {
             prefs.edit()
                     .putString(BackgroundSyncWorker.PREF_SESSION_COOKIE, cookie)
                     .putLong(BackgroundSyncWorker.PREF_SESSION_OK_AT, System.currentTimeMillis())
+                    .putString(BackgroundSyncWorker.PREF_SESSION_NET, DebugLog.network(getContext()))
                     .apply();
             BackgroundSyncWorker.clearSyncStopped(getContext(), prefs);
         }
-        DebugLog.log(getContext(), "plugin", "saveSession saved=" + saved);
+        DebugLog.log(getContext(), "plugin", "saveSession saved=" + saved + " " + DebugLog.sessionTag(cookie)
+                + " net " + DebugLog.network(getContext()));
         JSObject ret = new JSObject();
         ret.put("saved", saved);
         call.resolve(ret);
@@ -134,8 +136,9 @@ public class BackgroundSyncPlugin extends Plugin {
             restored = true;
         }
         DebugLog.log(getContext(), "plugin", "restoreSession restored=" + restored
-                + " (cookieManagerHadSession=" + (current != null && current.contains("JSESSIONID"))
-                + ", savedCopy=" + (saved != null && saved.contains("JSESSIONID")) + ")");
+                + " (cookieManagerHadSession=" + (current != null && current.contains("JSESSIONID")) + " " + DebugLog.sessionTag(current)
+                + ", savedCopy=" + (saved != null && saved.contains("JSESSIONID")) + " " + DebugLog.sessionTag(saved)
+                + ", net " + DebugLog.network(getContext()) + ")");
         JSObject ret = new JSObject();
         ret.put("restored", restored);
         // 복원했든 원래 있었든 세션 쿠키가 있는지 (없으면 끊긴 세션이 아니라 처음부터 세션이 없는 상태)
@@ -264,6 +267,9 @@ public class BackgroundSyncPlugin extends Plugin {
     public void recordSessionKicked(PluginCall call) {
         getContext().getSharedPreferences(BackgroundSyncWorker.PREFS_NAME, Context.MODE_PRIVATE)
                 .edit().putLong(BackgroundSyncWorker.PREF_SESSION_KICKED_AT, System.currentTimeMillis()).apply();
+        DebugLog.log(getContext(), "plugin", "app got kicked page (session "
+                + DebugLog.sessionTag(CookieManager.getInstance().getCookie(BackgroundSyncWorker.LMS_BASE))
+                + ", net " + DebugLog.network(getContext()) + ")");
         call.resolve();
     }
 

@@ -24,6 +24,8 @@ user-invocable: false
 
 - SSO 재로그인은 사용자의 PC 쪽 LMS 세션을 끊는다. `isSessionValid()`가 먼저 호출되는 구조를 유지할 것.
 - LMS는 계정당 세션 1개. 다른 곳 로그인으로 끊긴 JSESSIONID의 **첫 요청**에 서버가 `alert('다른 PC 에서 로그인 되었습니다.')` 페이지와 새 JSESSIONID를 준다(1회성, HAR 2026-10-04 확인). 이후 요청은 SSO `checkSession.do`로 302. 이 안내 페이지와 `alert('로그인 후 이용하실 수 있습니다.')` 페이지는 **EUC-KR**이라 앱(UTF-8)에서는 한글이 깨지므로 ASCII `alert('… PC …')`로 판별한다. 끊긴 세션도 `getSessionInfo`는 한동안 `user_no`를 돌려주므로 세션 확인만으로는 알 수 없다(기기 로그 2026-10-05 확인). 앱은 `sessionGuard.ts`(HttpClient에서 감지)와 `BackgroundSyncWorker`(`PREF_SESSION_KICKED_AT`)가 이를 기록해 재로그인을 멈춘다.
+- Wi-Fi↔LTE처럼 인터넷 연결이 바뀐 뒤 첫 요청에서 서버가 새 JSESSIONID를 주고 기존 로그인을 푼다(다음 요청이 302, "다른 PC" 안내 없이). 세션이 접속 IP에 묶인 것으로 보임(기기 로그 2026-10-06, 1회 확인). 워커는 자연 만료로 기록하고 "연결이 바뀌어 풀림" 알림을 띄움.
+- 요청에 Cookie 헤더가 두 줄이면 메인 화면·세션 확인까지 모두 HTTP 500 "잘못된 경로입니다"(1499자 오류 페이지). 앱 프로세스의 전역 `CookieHandler`(CapacitorCookies)와 직접 넣은 Cookie가 겹칠 때 생김(2026-10-06 확인).
 - 비밀번호 오류는 `LmsAuthCredentialsError` / `HsctisAuthError`로 구분된다. 네트워크 오류와 섞지 말 것.
 
 ## 2. LMS 스크래핑 (`lmsScraper.ts`): HTML + 정규식
