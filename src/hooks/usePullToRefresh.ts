@@ -6,7 +6,8 @@ const PULL_MAX_PX = 96;
 
 /**
  * 목록 맨 위에서 아래로 당겨 새로고침. 당긴 거리(px)를 돌려줘 화면에 표시기를 그리게 한다.
- * 가로로 미는 동작(과목 칩 스크롤)이나 맨 위가 아닐 때는 반응하지 않는다.
+ * 가로로 미는 동작이나 맨 위가 아닐 때, 그리고 data-no-pull-refresh 안(과목 선택 창처럼 목록 안에 뜬 창)에서
+ * 시작한 터치에는 반응하지 않는다.
  */
 export function usePullToRefresh(
   ref: RefObject<HTMLElement>,
@@ -26,6 +27,7 @@ export function usePullToRefresh(
 
     const onStart = (e: TouchEvent) => {
       if (e.touches.length !== 1 || el.scrollTop > 0) return;
+      if ((e.target as Element | null)?.closest?.('[data-no-pull-refresh]')) return;
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       tracking = true;

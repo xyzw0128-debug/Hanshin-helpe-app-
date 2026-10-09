@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { RotateCw, ChevronDown, CheckCircle, FolderOpen, Search, X } from 'lucide-react';
 import { AppStateData, AssignmentItem, NoticeItem } from '../types';
-import { SubjectChips } from './SubjectChips';
+import { SubjectFilter } from './SubjectFilter';
 import { AssignmentCard } from './AssignmentCard';
 import { LectureCard } from './LectureCard';
 import { NoticeCard } from './NoticeCard';
@@ -217,7 +217,7 @@ export const LmsView: React.FC<LmsViewProps> = ({
         </div>
       )}
 
-      <SubjectChips subjects={subjectList} selectedSubject={selectedSubject} onSelectSubject={setSelectedSubject} />
+      <SubjectFilter subjects={subjectList} selectedSubject={selectedSubject} onSelectSubject={setSelectedSubject} />
 
       {subTab === 'assignments' && (
         <div className="space-y-2.5">
