@@ -23,8 +23,10 @@ import { nextNavHistory, sameView, ViewState } from './utils/navHistory';
 
 import { DetailBottomSheet } from './components/DetailBottomSheet';
 import type { AcademicSection } from './components/AcademicView';
-import { HomeView, HomeNavigateTarget } from './components/HomeView';
-import { LmsView, LmsSubTab } from './components/LmsView';
+import { HomeView, HomeHeader, HomeNavigateTarget } from './components/HomeView';
+import { LmsView, LmsHeader, LmsSubTab } from './components/LmsView';
+import { AcademicHeader } from './components/AcademicHeader';
+import { HeaderTitleRow } from './components/TabHeader';
 import { MenuView, MenuSubpage } from './components/MenuView';
 import { SubpageLayout } from './components/SubpageLayout';
 import { ExitHint } from './components/ExitHint';
@@ -585,6 +587,13 @@ export const App: React.FC = () => {
     onRefresh: () => performSync(),
   });
 
+  // 본문이 상단 바 아래로 밀려 올라갔으면 상단 바에 그림자. 화면(탭·하위 탭)을 바꾸면 본문을 맨 위부터 보여 줌
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    contentRef.current?.scrollTo(0, 0);
+    setScrolled(false);
+  }, [activeTab, lmsSubTab, academicSection]);
+
   if (!config) {
     return (
       <div className="min-h-screen max-w-md mx-auto bg-white dark:bg-zinc-900 p-4 space-y-4">
@@ -680,8 +689,50 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* 메인 콘텐츠 (탭별로 내용이 곧 상단) */}
-      <div ref={contentRef} className="flex-1 overflow-y-auto no-scrollbar p-4 pb-24">
+      {/* 상단 바: 탭 제목·버튼·하위 탭. 본문만 스크롤되어 목록을 내려도 하위 탭을 바로 누를 수 있음 */}
+      <header
+        className={`relative z-10 flex-shrink-0 px-4 bg-white dark:bg-zinc-900 border-b border-zinc-200/80 dark:border-zinc-800 transition-shadow ${
+          scrolled ? 'shadow-[0_4px_12px_-6px_rgba(42,32,54,0.25)]' : ''
+        }`}
+      >
+        {activeTab === 'home' && (
+          <HomeHeader
+            displayName={profile.name || '한신인'}
+            lastSyncTime={state.lastSyncTime}
+            isSyncing={isSyncing}
+            onSync={() => performSync()}
+          />
+        )}
+        {activeTab === 'lms' && (
+          <LmsHeader
+            state={state}
+            subTab={lmsSubTab}
+            onSubTabChange={sub => goTo({ lmsSub: sub })}
+            readNoticeIds={readNoticeIdSet}
+            query={lmsQuery}
+            onQueryChange={setLmsQuery}
+            isSyncing={isSyncing}
+            onSync={() => performSync()}
+          />
+        )}
+        {activeTab === 'academics' && (
+          <AcademicHeader
+            academicData={state.academicData}
+            isLoading={isAcademicSyncing}
+            onRefresh={handleSyncAcademic}
+            section={academicSection}
+            onSectionChange={sec => goTo({ academic: sec })}
+          />
+        )}
+        {activeTab === 'menu' && <HeaderTitleRow title="전체메뉴" />}
+      </header>
+
+      {/* 메인 콘텐츠 */}
+      <div
+        ref={contentRef}
+        onScroll={e => setScrolled(e.currentTarget.scrollTop > 0)}
+        className="flex-1 overflow-y-auto no-scrollbar p-4 pb-24"
+      >
         {/* 당겨서 새로고침 표시 */}
         {pullDistance > 0 && (
           <div className="flex flex-col items-center justify-end overflow-hidden" style={{ height: pullDistance }}>
@@ -744,9 +795,6 @@ export const App: React.FC = () => {
           <HomeView
             state={state}
             cards={homeCards}
-            displayName={profile.name || '한신인'}
-            isSyncing={isSyncing}
-            onSync={() => performSync()}
             readNoticeIds={readNoticeIdSet}
             onOpenAssignment={openAssignment}
             onOpenNotice={openNotice}
@@ -761,9 +809,6 @@ export const App: React.FC = () => {
             subTab={lmsSubTab}
             onSubTabChange={sub => goTo({ lmsSub: sub })}
             query={lmsQuery}
-            onQueryChange={setLmsQuery}
-            isSyncing={isSyncing}
-            onSync={() => performSync()}
             readNoticeIds={readNoticeIdSet}
             onOpenAssignment={openAssignment}
             onOpenNotice={openNotice}
@@ -778,7 +823,6 @@ export const App: React.FC = () => {
             isLoading={isAcademicSyncing}
             onRefresh={handleSyncAcademic}
             section={academicSection}
-            onSectionChange={sec => goTo({ academic: sec })}
             hideGrades={config.hideGrades}
           />
           </Suspense>
