@@ -29,7 +29,6 @@ interface AcademicViewProps {
   isLoading: boolean;
   onRefresh: () => void;
   section: AcademicSection;
-  onSectionChange: (section: AcademicSection) => void;
   hideGrades?: boolean; // 성적 화면 평점 가리기 (눌러야 표시)
 }
 
@@ -38,11 +37,10 @@ export const AcademicView: React.FC<AcademicViewProps> = ({
   isLoading,
   onRefresh,
   section,
-  onSectionChange,
   hideGrades,
 }) => {
+  // 하위 탭(시간표·졸업 학점·성적)과 새로고침 버튼은 상단 바(AcademicHeader)에 있음
   const activeSection = section;
-  const setActiveSection = onSectionChange;
   const [gradesRevealed, setGradesRevealed] = useState(false);
   const gradesHidden = hideGrades !== false && !gradesRevealed;
   const [timetableViewMode, setTimetableViewMode] = useState<'grid' | 'daily'>('grid');
@@ -185,42 +183,6 @@ export const AcademicView: React.FC<AcademicViewProps> = ({
 
   return (
     <div className="space-y-3.5 pb-6">
-      {/* 상단: 서브탭 + 학사 새로고침 (탭 제목 줄 없이 서브탭이 곧 상단) */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-1.5">
-          <div className="flex-1 flex p-1 bg-zinc-200/80 dark:bg-zinc-900 rounded-2xl text-xs font-bold">
-            {(
-              [
-                ['timetable', '시간표'],
-                ['graduation', '졸업 학점'],
-                ['grades', '성적'],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                onClick={() => setActiveSection(id)}
-                className={`flex-1 py-2 text-center rounded-xl transition-all ${
-                  activeSection === id
-                    ? 'bg-white dark:bg-zinc-800 text-hs-700 dark:text-hs-300 shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={onRefresh}
-            disabled={isLoading}
-            className="p-2 rounded-xl text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-zinc-800 disabled:opacity-60"
-            aria-label="학사 새로고침"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-        <p className="text-[10px] text-zinc-400 text-right px-1">최종 갱신 {academicData?.lastUpdated || '-'}</p>
-      </div>
-
       {/* 성적 가리기: 눌러야 평점 표시 */}
       {activeSection === 'grades' && gradesHidden && (
         <button

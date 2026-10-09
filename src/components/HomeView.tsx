@@ -17,6 +17,8 @@ import { mergeDayTimetable, SUBJECT_PALETTE } from '../utils/timetable';
 import { parseLectureDeadline, stripLectureProgress } from '../services/lmsScraper';
 import { formatDeadlineBadge, formatTodayLabel, parseNoticeDate } from '../utils/date';
 import { isActiveAssignment, isActiveLecture, isQuizItem } from '../utils/lmsItems';
+import { useNow } from '../hooks/useNow';
+import { HeaderTitleRow } from './TabHeader';
 
 export type HomeNavigateTarget =
   | { tab: 'lms'; sub: 'assignments' | 'lectures' | 'notices' | 'materials' }
@@ -25,9 +27,6 @@ export type HomeNavigateTarget =
 interface HomeViewProps {
   state: AppStateData;
   cards: HomeCardSetting[];
-  displayName: string;
-  isSyncing: boolean;
-  onSync: () => void;
   readNoticeIds: Set<string>;
   onOpenAssignment: (a: AssignmentItem) => void;
   onOpenNotice: (n: NoticeItem) => void;
@@ -52,31 +51,52 @@ const CardTitle: React.FC<{ title: string; action?: { label: string; onClick: ()
 
 const minutesOfDay = (d: Date) => d.getHours() * 60 + d.getMinutes();
 
+/** 홈 상단 바: 인사 · 오늘 날짜 · 새로고침 */
+export const HomeHeader: React.FC<{
+  displayName: string;
+  lastSyncTime: string | null;
+  isSyncing: boolean;
+  onSync: () => void;
+}> = ({ displayName, lastSyncTime, isSyncing, onSync }) => {
+  const now = useNow();
+  return (
+    <HeaderTitleRow title={`${displayName}님, 안녕하세요`} subtitle={formatTodayLabel(now)}>
+      <button
+        onClick={onSync}
+        disabled={isSyncing}
+        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-60"
+        aria-label="LMS 새로고침"
+      >
+        <RotateCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+        {lastSyncTime || '동기화'}
+      </button>
+    </HeaderTitleRow>
+  );
+};
+
 export const HomeView: React.FC<HomeViewProps> = ({
   state,
   cards,
-  displayName,
-  isSyncing,
-  onSync,
   readNoticeIds,
   onOpenAssignment,
   onOpenNotice,
   onNavigate,
   onEditHome,
 }) => {
-  const now = new Date();
+  // 매 분 다시 그려 "n분 후"·마감 배지가 화면을 다시 열지 않아도 바뀌게 함
+  const now = useNow();
   const nowMs = now.getTime();
+  const today = now.getDay();
 
   // 오늘 수업 (토·일 포함 요일 기준, 시간 미지정 과목 제외)
   const todayClasses = useMemo(() => {
-    const day = new Date().getDay();
-    const items = (state.academicData?.timetable || []).filter(t => !t.unscheduled && t.dayOfWeek === day);
+    const items = (state.academicData?.timetable || []).filter(t => !t.unscheduled && t.dayOfWeek === today);
     return mergeDayTimetable(items);
-  }, [state.academicData?.timetable]);
+  }, [state.academicData?.timetable, today]);
 
   // 마감 임박: 과제·퀴즈 + 온라인 강의를 마감 순으로
   const deadlines = useMemo(() => {
-    const t = Date.now();
+    const t = nowMs;
     const list: Array<
       | { kind: 'assignment'; key: string; deadlineMs: number; item: AssignmentItem }
       | { kind: 'lecture'; key: string; deadlineMs: number; courseNm: string; title: string }
@@ -93,7 +113,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
       }
     }
     return list.sort((a, b) => a.deadlineMs - b.deadlineMs).slice(0, 5);
-  }, [state.assignments, state.lectures]);
+  }, [state.assignments, state.lectures, nowMs]);
 
   const pendingAssignments = state.assignments.filter(a => isActiveAssignment(a, nowMs)).length;
   const pendingLectures = state.lectures.filter(l => isActiveLecture(l, nowMs)).length;
@@ -210,7 +230,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             ) : (
               <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
                 {deadlines.map(d => {
-                  const badge = formatDeadlineBadge(d.deadlineMs);
+                  const badge = formatDeadlineBadge(d.deadlineMs, now);
                   const isLecture = d.kind === 'lecture';
                   const quiz = d.kind === 'assignment' && isQuizItem(d.item);
                   const Icon = isLecture ? PlayCircle : quiz ? HelpCircle : FileText;
@@ -326,23 +346,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
   return (
     <div className="space-y-3.5">
-      {/* 상단: 인사 · 오늘 날짜 · 새로고침 */}
-      <div className="flex items-start justify-between pt-1 px-0.5">
-        <div>
-          <h1 className="text-lg font-black text-zinc-900 dark:text-white tracking-tight">{displayName}님, 안녕하세요</h1>
-          <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mt-0.5">{formatTodayLabel(now)}</p>
-        </div>
-        <button
-          onClick={onSync}
-          disabled={isSyncing}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-60"
-          aria-label="LMS 새로고침"
-        >
-          <RotateCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-          {state.lastSyncTime || '동기화'}
-        </button>
-      </div>
-
       {cards.filter(c => c.enabled).map(c => renderCard(c.id))}
 
       <button
