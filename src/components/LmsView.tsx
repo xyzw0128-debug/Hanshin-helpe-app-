@@ -5,7 +5,7 @@ import { SubjectFilter } from './SubjectFilter';
 import { AssignmentCard } from './AssignmentCard';
 import { LectureCard } from './LectureCard';
 import { NoticeCard } from './NoticeCard';
-import { parseNoticeDate } from '../utils/date';
+import { formatSyncTime, parseNoticeDate } from '../utils/date';
 import { isActiveAssignment, isActiveLecture } from '../utils/lmsItems';
 import { parseLectureDeadline } from '../services/lmsScraper';
 import { useNow } from '../hooks/useNow';
@@ -90,6 +90,7 @@ export const LmsHeader: React.FC<{
     if (id === 'notices') return state.notices.filter(n => !readNoticeIds.has(n.id)).length;
     return 0;
   };
+  const syncLabel = state.lastSyncAt ? formatSyncTime(state.lastSyncAt, new Date(nowMs)) : state.lastSyncTime;
 
   return (
     <>
@@ -125,7 +126,7 @@ export const LmsHeader: React.FC<{
           </button>
         </div>
       ) : (
-        <HeaderTitleRow title="LMS" subtitle={state.lastSyncTime ? `${state.lastSyncTime} 동기화` : undefined}>
+        <HeaderTitleRow title="LMS" subtitle={syncLabel ? `${syncLabel} 동기화` : undefined}>
           <HeaderIconButton label="LMS 검색" onClick={() => onQueryChange('')}>
             <Search className="w-5 h-5" />
           </HeaderIconButton>
@@ -235,12 +236,12 @@ export const LmsView: React.FC<LmsViewProps> = ({
             />
           ) : (
             activeAssignments.map(item => (
-              <AssignmentCard key={item.id} item={item} onClick={() => onOpenAssignment(item)} />
+              <AssignmentCard key={item.id} item={item} nowMs={nowMs} onClick={() => onOpenAssignment(item)} />
             ))
           )}
           <PastSection count={pastAssignments.length} forceOpen={!!q}>
             {pastAssignments.map(item => (
-              <AssignmentCard key={item.id} item={item} onClick={() => onOpenAssignment(item)} />
+              <AssignmentCard key={item.id} item={item} nowMs={nowMs} onClick={() => onOpenAssignment(item)} />
             ))}
           </PastSection>
         </div>
@@ -253,11 +254,11 @@ export const LmsView: React.FC<LmsViewProps> = ({
               text={q ? (pastLectures.length > 0 ? '진행 중인 강의 중에는 결과가 없어요.' : '검색 결과가 없어요.') : '수강할 온라인 강의가 없습니다.'}
             />
           ) : (
-            activeLectures.map(item => <LectureCard key={item.id} item={item} />)
+            activeLectures.map(item => <LectureCard key={item.id} item={item} nowMs={nowMs} />)
           )}
           <PastSection count={pastLectures.length} forceOpen={!!q}>
             {pastLectures.map(item => (
-              <LectureCard key={item.id} item={item} />
+              <LectureCard key={item.id} item={item} nowMs={nowMs} />
             ))}
           </PastSection>
         </div>

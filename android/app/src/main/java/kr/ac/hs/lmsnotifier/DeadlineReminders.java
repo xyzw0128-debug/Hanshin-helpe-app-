@@ -12,8 +12,10 @@ import android.os.Build;
 import androidx.core.app.NotificationCompat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import kr.ac.hs.lmsnotifier.TodoListParser.TodoItem;
 import org.json.JSONArray;
@@ -129,30 +131,58 @@ public final class DeadlineReminders {
 
     /**
      * 백그라운드 확인 결과 반영: 완료 목록에 오른 항목(제출·수강 완료)은 알림을 지우고,
-     * 진행 중 목록에서 처음 보는 항목은 알림을 새로 예약한다.
+     * 진행 중 목록에서 처음 보는 항목은 알림을 새로 예약하고, 이미 있는 항목은 마감이 바뀌었으면(연장 등) 새 마감으로 고친다.
      */
     static synchronized void applyWorkerResult(Context context, List<TodoItem> pending, Set<String> completedIds, long now) {
-        List<Item> items = load(context);
-        Set<String> known = new HashSet<>();
-        int removed = 0;
-        List<Item> removedItems = new ArrayList<>();
-        List<Item> next = new ArrayList<>();
+        MergeResult r = merge(load(context), pending, completedIds, now);
+        if (r.changed()) save(context, r.next);
+        // 바뀐 것이 없어도 다시 예약: 강제 종료·정확한 알람 권한 해제 때 시스템이 알람을 지우므로 확인할 때마다 복구
+        reschedule(context);
+        DebugLog.log(context, "reminder", "worker result: +" + r.added + " -" + r.removed.size() + " ~" + r.updated
+                + (r.removed.isEmpty() ? "" : " (completed: " + countByKind(r.removed) + ")") + " (total " + r.next.size() + ")");
+    }
+
+    /** merge 결과: 새 목록, 지운 항목(완료), 더한 수, 마감을 고친 수 */
+    static final class MergeResult {
+        final List<Item> next = new ArrayList<>();
+        final List<Item> removed = new ArrayList<>();
+        int added;
+        int updated;
+
+        boolean changed() {
+            return !removed.isEmpty() || added > 0 || updated > 0;
+        }
+    }
+
+    /** applyWorkerResult의 목록 계산 (기기 기능을 쓰지 않아 단위 테스트 가능: DeadlineRemindersTest) */
+    static MergeResult merge(List<Item> items, List<TodoItem> pending, Set<String> completedIds, long now) {
+        MergeResult r = new MergeResult();
+        Map<String, Item> known = new HashMap<>();
         for (Item it : items) {
             if (completedIds.contains(it.id)) {
-                removed++;
-                removedItems.add(it);
+                r.removed.add(it);
                 continue;
             }
-            next.add(it);
-            known.add(it.id);
+            r.next.add(it);
+            known.put(it.id, it);
         }
-        int added = 0;
         for (TodoItem t : pending) {
-            if (!t.isPending || known.contains(t.id)) continue;
+            if (!t.isPending) continue;
             String kind = kindOfTab(t.tab);
             if (kind == null) continue;
             long deadline = TodoListParser.parseDeadlineMs(t.dateStr);
             if (deadline == Long.MAX_VALUE || deadline <= now) continue;
+            Item existing = known.get(t.id);
+            if (existing != null) {
+                // 마감이 바뀜(연장 등): 그대로 두면 옛 마감 기준으로 "하루 전" 알림이 울리고,
+                // 옛 마감이 지나면 알림·위젯에서 빠져 새 마감 알림이 없음 (앱에서 동기화할 때까지)
+                if (existing.deadlineMs != deadline) {
+                    existing.deadlineMs = deadline;
+                    existing.deadlineStr = t.dateStr;
+                    r.updated++;
+                }
+                continue;
+            }
             Item it = new Item();
             it.id = t.id;
             it.kind = kind;
@@ -160,15 +190,11 @@ public final class DeadlineReminders {
             it.title = KIND_LECTURE.equals(kind) ? TodoListParser.stripProgress(t.title) : t.title;
             it.deadlineStr = t.dateStr;
             it.deadlineMs = deadline;
-            next.add(it);
-            known.add(it.id);
-            added++;
+            r.next.add(it);
+            known.put(it.id, it);
+            r.added++;
         }
-        if (removed > 0 || added > 0) save(context, next);
-        // 바뀐 것이 없어도 다시 예약: 강제 종료·정확한 알람 권한 해제 때 시스템이 알람을 지우므로 확인할 때마다 복구
-        reschedule(context);
-        DebugLog.log(context, "reminder", "worker result: +" + added + " -" + removed
-                + (removed > 0 ? " (completed: " + countByKind(removedItems) + ")" : "") + " (total " + next.size() + ")");
+        return r;
     }
 
     static String kindOfTab(String tab) {

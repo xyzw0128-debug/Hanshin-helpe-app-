@@ -246,7 +246,8 @@ public final class TodoListParser {
         return sb.toString();
     }
 
-    static long parseDeadlineMs(String dateStr) {
+    /** 마감 시각(ms), 날짜가 없으면 Long.MAX_VALUE. npm test의 Test 38이 앱(TS)과 같은 값인지 검증 */
+    public static long parseDeadlineMs(String dateStr) {
         if (dateStr == null || dateStr.isEmpty()) return Long.MAX_VALUE;
         Matcher m = DEADLINE_PATTERN.matcher(dateStr);
         long lastMs = Long.MAX_VALUE;
@@ -257,7 +258,9 @@ public final class TodoListParser {
                 int d = Integer.parseInt(m.group(3));
                 int h = m.group(4) != null ? Integer.parseInt(m.group(4)) : 23;
                 int min = m.group(5) != null ? Integer.parseInt(m.group(5)) : 59;
-                int sec = m.group(6) != null ? Integer.parseInt(m.group(6)) : 59;
+                // 앱(lmsScraper.ts parseLectureDeadline)과 같은 규칙: 시:분만 있으면 0초, 날짜만 있으면 23:59:59.
+                // 다르면 워커가 앱이 넘긴 마감과 몇십 초 차이를 "마감 변경"으로 보고 매번 고침 (DeadlineReminders.merge)
+                int sec = m.group(6) != null ? Integer.parseInt(m.group(6)) : (m.group(4) != null ? 0 : 59);
                 Calendar cal = Calendar.getInstance();
                 cal.set(y, mon, d, h, min, sec);
                 cal.set(Calendar.MILLISECOND, 0);

@@ -68,6 +68,9 @@ const EMPTY_STATE: AppStateData = {
   sentReminders: {},
 };
 
+/** 앱으로 돌아왔을 때 마지막 동기화가 이보다 오래됐으면 세션이 살아 있어도 다시 동기화 */
+const RESUME_SYNC_AFTER_MS = 10 * 60 * 1000;
+
 /** 백그라운드 동기화는 알림 전용이므로 푸시 알림이 꺼져 있으면 함께 끈다 */
 const isBackgroundSyncOn = (cfg: UserConfig) =>
   cfg.backgroundSyncEnabled !== false && cfg.pushNotificationsEnabled !== false;
@@ -295,35 +298,33 @@ export const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 앱 화면 복귀(포그라운드 전환) 시 세션 만료 감지 및 무자각 자동 재인증
+  // 앱 화면 복귀(포그라운드 전환): 마지막 동기화가 RESUME_SYNC_AFTER_MS보다 오래됐으면 조용히 동기화하고,
+  // 최근이면 세션만 확인해 끊겼을 때만 동기화 (다시 로그인할지는 performSync가 PC 보호 기준으로 판단).
+  // 세션이 살아 있어도 동기화하는 이유: 백그라운드 확인이 같은 세션을 30분마다 써서 세션이 몇 시간씩 유지되므로
+  // 끊김만 기다리면 앱이 메모리에 남아 있는 동안 예전 목록이 그대로 남음
   const lastResumeSyncRef = useRef<number>(Date.now());
   useEffect(() => {
     const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible' && config?.userId && config?.userPw) {
-        const now = Date.now();
-        if (now - lastResumeSyncRef.current < 10000) return;
-        lastResumeSyncRef.current = now;
+      if (document.visibilityState !== 'visible' || !config?.userId || !config?.userPw) return;
+      const now = Date.now();
+      if (now - lastResumeSyncRef.current < 10000) return;
+      lastResumeSyncRef.current = now;
 
+      const lastSyncAt = stateRef.current.lastSyncAt || 0;
+      if (now - lastSyncAt < RESUME_SYNC_AFTER_MS) {
         const session = await LmsAuthService.checkSession();
         debugLog('app', '포그라운드 복귀 세션 확인', { session });
-        if (session === 'invalid') {
-          if (!(await canRelogin({ enabled: config.protectPcSession !== false, interactive: false }))) {
-            debugLog('app', '다른 곳 로그인 의심 → 복귀 시 재로그인 생략');
-            return;
-          }
-          try {
-            await LmsAuthService.login(config.userId, config.userPw, true);
-            performSync(config, undefined, { silent: true });
-          } catch (err) {
-            if (isCredentialsError(err)) handleCredentialsRejected(config);
-            else console.warn('Silent re-auth on foreground resume error', err);
-          }
-        }
+        if (session !== 'invalid') return;
+      } else {
+        debugLog('app', '포그라운드 복귀: 마지막 동기화가 오래됨 → 동기화', {
+          minutesSinceSync: lastSyncAt ? Math.round((now - lastSyncAt) / 60000) : null,
+        });
       }
+      performSync(config, undefined, { silent: true });
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [config?.userId, config?.userPw, config?.protectPcSession, performSync, handleCredentialsRejected]);
+  }, [config, performSync]);
 
   // ---------- 학사 동기화 ----------
   const academicSyncFailedRef = useRef(false);
@@ -699,6 +700,7 @@ export const App: React.FC = () => {
           <HomeHeader
             displayName={profile.name || '한신인'}
             lastSyncTime={state.lastSyncTime}
+            lastSyncAt={state.lastSyncAt}
             isSyncing={isSyncing}
             onSync={() => performSync()}
           />

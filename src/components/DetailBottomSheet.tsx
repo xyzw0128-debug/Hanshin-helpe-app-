@@ -3,6 +3,9 @@ import { AssignmentItem, NoticeItem } from '../types';
 import { ExternalLink, Paperclip, CalendarPlus } from 'lucide-react';
 import { LMS_BASE } from '../services/lmsAuth';
 import { addDeadlineToCalendar } from '../services/appShell';
+import { useNow } from '../hooks/useNow';
+import { deadlineStatus } from '../utils/date';
+import { isQuizItem } from '../utils/lmsItems';
 
 interface DetailBottomSheetProps {
   assignment: AssignmentItem | null;
@@ -16,9 +19,21 @@ export const DetailBottomSheet: React.FC<DetailBottomSheetProps> = ({
   onClose,
 }) => {
   const isOpen = Boolean(assignment || notice);
-  // 마감이 남은 미제출 과제·퀴즈만 캘린더에 추가 가능
+  // 남은 시간·제출 상태는 동기화 때 저장한 글자가 아니라 지금 시각으로 계산 (열어 둔 동안에도 매 분 갱신)
+  const now = useNow();
   const deadlineMs = assignment?.deadlineDate ? new Date(assignment.deadlineDate).getTime() : NaN;
-  const canAddCalendar = !!assignment && !assignment.isSubmitted && deadlineMs > Date.now();
+  const expired = deadlineMs <= now.getTime();
+  const timeLeftText = assignment ? deadlineStatus(deadlineMs, assignment.isSubmitted, now).timeLeftText : '';
+  // 퀴즈는 마감이 지나면 "마감됨", 그 전에는 "미응시"
+  const statusLabel = assignment?.isSubmitted
+    ? '제출완료'
+    : assignment && isQuizItem(assignment)
+    ? expired
+      ? '마감됨'
+      : '미응시'
+    : '미제출';
+  // 마감이 남은 미제출 과제·퀴즈만 캘린더에 추가 가능
+  const canAddCalendar = !!assignment && !assignment.isSubmitted && deadlineMs > now.getTime();
 
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -73,7 +88,7 @@ export const DetailBottomSheet: React.FC<DetailBottomSheetProps> = ({
                     assignment.isSubmitted ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'
                   }`}
                 >
-                  {assignment.statusInfo || (assignment.isSubmitted ? '제출완료' : '미제출')}
+                  {statusLabel}
                 </span>
                 <span className="text-xs font-bold text-hs-700 dark:text-hs-300">{assignment.courseNm}</span>
               </div>
@@ -88,7 +103,7 @@ export const DetailBottomSheet: React.FC<DetailBottomSheetProps> = ({
                 <div className="flex justify-between">
                   <span>남은 시간</span>
                   <b className={assignment.isSubmitted ? 'text-zinc-700' : 'text-red-600 dark:text-red-400'}>
-                    {assignment.timeLeftText}
+                    {timeLeftText}
                   </b>
                 </div>
                 <div className="flex justify-between">

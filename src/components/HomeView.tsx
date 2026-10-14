@@ -15,7 +15,7 @@ import { AppStateData, AssignmentItem, HomeCardSetting, NoticeItem } from '../ty
 import { CampusQuickHub } from './CampusQuickHub';
 import { mergeDayTimetable, SUBJECT_PALETTE } from '../utils/timetable';
 import { parseLectureDeadline, stripLectureProgress } from '../services/lmsScraper';
-import { formatDeadlineBadge, formatTodayLabel, parseNoticeDate } from '../utils/date';
+import { formatDeadlineBadge, formatSyncTime, formatTodayLabel, parseNoticeDate } from '../utils/date';
 import { isActiveAssignment, isActiveLecture, isQuizItem } from '../utils/lmsItems';
 import { useNow } from '../hooks/useNow';
 import { HeaderTitleRow } from './TabHeader';
@@ -55,9 +55,11 @@ const minutesOfDay = (d: Date) => d.getHours() * 60 + d.getMinutes();
 export const HomeHeader: React.FC<{
   displayName: string;
   lastSyncTime: string | null;
+  /** 마지막 동기화 시각(ms). 오늘이 아니면 "어제 14:05"처럼 날짜를 붙여 보여 줌 */
+  lastSyncAt?: number;
   isSyncing: boolean;
   onSync: () => void;
-}> = ({ displayName, lastSyncTime, isSyncing, onSync }) => {
+}> = ({ displayName, lastSyncTime, lastSyncAt, isSyncing, onSync }) => {
   const now = useNow();
   return (
     <HeaderTitleRow title={`${displayName}님, 안녕하세요`} subtitle={formatTodayLabel(now)}>
@@ -68,7 +70,7 @@ export const HomeHeader: React.FC<{
         aria-label="LMS 새로고침"
       >
         <RotateCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-        {lastSyncTime || '동기화'}
+        {(lastSyncAt ? formatSyncTime(lastSyncAt, now) : lastSyncTime) || '동기화'}
       </button>
     </HeaderTitleRow>
   );

@@ -41,9 +41,9 @@ LMS·HSCTIS 엔드포인트와 로그인 흐름 상세는 `.claude/skills/lms-pr
 
 ## 주의사항
 
-- **TS/Java 이중 구현**: LMS todo 목록 파싱(`lmsScraper.ts`의 `getTodoList`)을 바꾸면 `TodoListParser.java`(백그라운드 워커용)도 같이 맞춰야 함. 항목 ID가 다르면 중복 알림이 가므로 `npm test`의 Test 38이 두 파서의 ID 일치를 HAR로 검증함(JDK 필요). 플러그인 메서드를 추가하거나 바꾸면 `@PluginMethod`와 `registerPlugin` 인터페이스를 함께 수정. 밀리초 시각 같은 큰 숫자는 JSON에서 Long으로 와서 `call.getDouble`/`getInt`로 읽히지 않으므로 `call.getData().optLong(...)`을 쓸 것.
+- **TS/Java 이중 구현**: LMS todo 목록 파싱(`lmsScraper.ts`의 `getTodoList`)을 바꾸면 `TodoListParser.java`(백그라운드 워커용)도 같이 맞춰야 함. 항목 ID가 다르면 중복 알림이 가므로 `npm test`의 Test 38이 두 파서의 ID·마감 시각 일치를 HAR로 검증함(JDK 필요). 마감 알림 목록 병합(`DeadlineReminders.merge`)은 `cd android && ./gradlew testDebugUnitTest`로 검증. 플러그인 메서드를 추가하거나 바꾸면 `@PluginMethod`와 `registerPlugin` 인터페이스를 함께 수정. 밀리초 시각 같은 큰 숫자는 JSON에서 Long으로 와서 `call.getDouble`/`getInt`로 읽히지 않으므로 `call.getData().optLong(...)`을 쓸 것.
 - **SSO 재로그인은 PC 세션을 끊는다**: `login()`은 `isSessionValid()`를 먼저 확인함. 로그인 호출을 늘리지 말 것.
-- **테스트는 실제 계정으로 학교 서버에 접속**한다. 반복 실행하거나 루프로 돌리지 말고, 실행 전에 사용자에게 확인.
+- **`tests/test_lms_connection.mjs`·`test_all_courses.mjs`는 실제 계정으로 학교 서버에 접속**한다. 반복 실행하거나 루프로 돌리지 말고, 실행 전에 사용자에게 확인. `npm test`(`test_hsctis_nexacro.mjs`)는 HAR와 가짜 응답만 써서 접속하지 않음.
 - **비밀 정보**: `.env`, `android/app/hs-lms.keystore`는 읽거나 수정하지 않음(hook과 deny 규칙으로 막혀 있음). 키스토어를 잃거나 망가뜨리면 기존 설치본에 업데이트를 배포할 수 없음.
 - 로그나 디버그 출력에 학번·비밀번호·쿠키가 들어가면 `debugLog.ts`의 `redactSensitive`를 거칠 것. 세션을 구분해야 하면 값 대신 `DebugLog.sessionTag`(해시 앞 6자리)를 남김.
 - **네이티브에서 `HttpURLConnection`에 Cookie 헤더를 직접 넣지 말 것**(앱 프로세스가 떠 있을 때): Capacitor가 전역 `CookieHandler`를 등록해 두어 CookieManager 쿠키가 자동으로 한 줄 더 붙고, 두 줄이 되면 LMS가 모든 요청을 "잘못된 경로입니다"(HTTP 500)로 거부함. 워커는 핸들러가 없을 때(앱이 꺼진 프로세스)만 직접 넣음.

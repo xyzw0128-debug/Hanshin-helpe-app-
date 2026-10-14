@@ -2277,8 +2277,9 @@ console.log('\nTest 37: Kicked-session page detection (incl. EUC-KR mojibake)...
 }
 
 // -------------------------------------------------------------
-// Test 38: 백그라운드 워커(Java TodoListParser)와 앱(TS)의 할일 항목 ID 일치
+// Test 38: 백그라운드 워커(Java TodoListParser)와 앱(TS)의 할일 항목 ID·마감 시각 일치
 //   ID가 다르면 워커가 앱이 이미 본 항목을 새 항목으로 보고 중복 알림 (예: 제목의 &middot;)
+//   마감이 다르면 워커가 앱이 넘긴 마감 알림 시각을 매번 고침
 // -------------------------------------------------------------
 console.log('\nTest 38: Java TodoListParser IDs match TS parseTodoListHtml (과제·강의·퀴즈·과목 공지)...');
 {
@@ -2339,19 +2340,30 @@ public class Main { public static void main(String[] a) throws Exception {
   Path[] files = Files.list(Paths.get(a[0])).filter(p -> p.toString().endsWith(".html")).sorted().toArray(Path[]::new);
   for (Path p : files) for (kr.ac.hs.lmsnotifier.TodoListParser.TodoItem it :
       kr.ac.hs.lmsnotifier.TodoListParser.parse(new String(Files.readAllBytes(p), "UTF-8"), 0L))
-    System.out.println(p.getFileName() + "\\t" + it.id);
+    System.out.println(p.getFileName() + "\\t" + it.id + "\\t" + kr.ac.hs.lmsnotifier.TodoListParser.parseDeadlineMs(it.dateStr));
 }}`
     );
     const parserSrc = new URL('../android/app/src/main/java/kr/ac/hs/lmsnotifier/TodoListParser.java', import.meta.url).pathname;
     execFileSync('javac', ['-encoding', 'UTF-8', '-d', tmp, parserSrc, path.join(tmp, 'Main.java')]);
-    const javaIds = new Set(
-      execFileSync('java', ['-cp', tmp, 'Main', tmp], { encoding: 'utf8' }).trim().split('\n').filter(Boolean)
-    );
+    // 줄마다 "파일\t항목 ID\t마감(ms, 없으면 Long.MAX_VALUE)"
+    const javaRows = execFileSync('java', ['-cp', tmp, 'Main', tmp], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(line => line.split('\t'));
+    const javaIds = new Set(javaRows.map(([file, id]) => `${file}\t${id}`));
+    const javaDeadlines = new Map(javaRows.map(([file, id, ms]) => [`${file}\t${id}`, ms]));
 
     const tsIds = new Set();
+    const tsDeadlines = new Map();
     pages.forEach((html, i) => {
       const r = LmsScraperService.parseTodoListHtml(html);
-      for (const it of [...r.assignments, ...r.lectures, ...r.quizzes, ...r.notices]) tsIds.add(`${String(i).padStart(2, '0')}.html\t${it.id}`);
+      const file = `${String(i).padStart(2, '0')}.html`;
+      for (const it of [...r.assignments, ...r.lectures, ...r.quizzes, ...r.notices]) tsIds.add(`${file}\t${it.id}`);
+      for (const a of [...r.assignments, ...r.quizzes]) {
+        tsDeadlines.set(`${file}\t${a.id}`, a.deadlineDate ? new Date(a.deadlineDate).getTime() : null);
+      }
+      for (const l of r.lectures) tsDeadlines.set(`${file}\t${l.id}`, parseLectureDeadline(l.periodStr));
     });
 
     const onlyJava = [...javaIds].filter(x => !tsIds.has(x));
@@ -2360,8 +2372,14 @@ public class Main { public static void main(String[] a) throws Exception {
     for (const id of expectedSyntheticIds) {
       assert.ok(javaIds.has(`00.html\t${id}`), `Java가 DOM 기준 ID를 내야 함: ${id}`);
     }
+    // 마감 시각도 같아야 함: 다르면 워커가 앱이 넘긴 마감을 "마감 변경"으로 보고 매번 고침 (DeadlineReminders.merge)
+    const deadlineKey = v => (v === null || v === undefined || v === Infinity || v === '9223372036854775807' ? 'none' : String(v));
+    const deadlineDiffs = [...tsDeadlines]
+      .filter(([key, ms]) => deadlineKey(ms) !== deadlineKey(javaDeadlines.get(key)))
+      .map(([key, ms]) => `${key}: ts=${deadlineKey(ms)} java=${deadlineKey(javaDeadlines.get(key))}`);
+    assert.deepStrictEqual(deadlineDiffs, [], 'Java/TS 마감 시각이 달라 워커가 매번 마감 변경으로 처리');
     fs.rmSync(tmp, { recursive: true, force: true });
-    console.log(`  ${javaIds.size} IDs identical (${pages.length} pages)`);
+    console.log(`  ${javaIds.size} IDs, ${tsDeadlines.size} deadlines identical (${pages.length} pages)`);
   }
   console.log('  -> Test 38 Java/TS todo ID parity PASSED');
 }

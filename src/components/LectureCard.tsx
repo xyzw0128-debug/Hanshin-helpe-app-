@@ -1,21 +1,23 @@
 import React from 'react';
 import { LectureItem } from '../types';
 import { Check, Flame, CalendarPlus } from 'lucide-react';
-import { LmsScraperService, parseLectureDeadline, stripLectureProgress } from '../services/lmsScraper';
-import { formatDeadlineDateTime } from '../utils/date';
+import { parseLectureDeadline, stripLectureProgress } from '../services/lmsScraper';
+import { deadlineStatus, formatDeadlineDateTime } from '../utils/date';
 import { addDeadlineToCalendar } from '../services/appShell';
 
 interface LectureCardProps {
   item: LectureItem;
+  /** 지금 시각(ms, 매 분 바뀜). 이 값이 바뀌어야 다시 그려져 남은 시간이 멈춰 있지 않음 (React.memo) */
+  nowMs: number;
 }
 
-const LectureCardInner: React.FC<LectureCardProps> = ({ item }) => {
+const LectureCardInner: React.FC<LectureCardProps> = ({ item, nowMs }) => {
   const done = item.isAttended;
   const deadlineMs = parseLectureDeadline(item.periodStr);
   const hasDeadline = Number.isFinite(deadlineMs);
   // 과제와 같은 D-day 규칙. 동기화 시점이 아니라 지금 시각 기준으로 계산
-  const dday = !done && hasDeadline ? LmsScraperService.calculateDDay(item.periodStr, false) : null;
-  const expired = !!dday && deadlineMs <= Date.now();
+  const dday = !done && hasDeadline ? deadlineStatus(deadlineMs, false, new Date(nowMs)) : null;
+  const expired = !!dday && deadlineMs <= nowMs;
   const isUrgent = dday?.badgeType === 'urgent';
   const isWarning = dday?.badgeType === 'warning';
   const muted = done || expired;

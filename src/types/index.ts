@@ -193,6 +193,7 @@ export interface AcademicData {
 
 export interface AppStateData {
   lastSyncTime: string | null;
+  lastSyncAt?: number; // 마지막으로 LMS 동기화에 성공한 시각(epoch ms). 앱 복귀 시 다시 동기화할지 판단, 날짜 표시
   courses: Course[];
   assignments: AssignmentItem[];
   lectures: LectureItem[];
