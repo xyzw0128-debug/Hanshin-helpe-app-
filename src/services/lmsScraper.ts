@@ -4,6 +4,7 @@ import { Course, AssignmentItem, LectureItem, NoticeItem, TodoListResult, Materi
 import { LMS_BASE, USER_AGENT, LmsAuthService } from './lmsAuth';
 import { debugLog } from './debugLog';
 import { isKickedResponse } from './sessionGuard';
+import { deadlineStatus, type DeadlineBadgeType } from '../utils/date';
 
 const MY_LECTURE_MNID = '201008840728';
 const CLASSROOM_MNID = '201008254671';
@@ -288,98 +289,23 @@ export class LmsScraperService {
   }
 
   /**
-   * (종료시한 : YYYY.MM.DD HH:mm:ss) 또는 기간 정밀 파싱 기반 초 단위 D-Day 계산
+   * (종료시한 : YYYY.MM.DD HH:mm:ss) 또는 기간 문자열의 마감 시각(parseLectureDeadline과 같은 규칙)과 지금 기준 D-day·남은 시간.
+   * 화면은 여기서 저장해 둔 badgeText·timeLeftText를 쓰지 않고 그릴 때 deadlineStatus로 다시 계산한다
+   * (저장값은 동기화 시점에 멈춰 있음)
    */
   public static calculateDDay(
     dateStr: string,
     isSubmitted: boolean
   ): {
     badgeText: string;
-    badgeType: 'urgent' | 'warning' | 'done' | 'normal';
+    badgeType: DeadlineBadgeType;
     timeLeftText: string;
     deadlineDate: string | null;
   } {
-    const matches = Array.from(
-      (dateStr || '').matchAll(/(\d{4})[.\-/](\d{2})[.\-/](\d{2})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/g)
-    );
-
-    if (matches.length === 0) {
-      if (isSubmitted) {
-        return {
-          badgeText: '제출완료',
-          badgeType: 'done',
-          timeLeftText: '제출완료됨',
-          deadlineDate: null,
-        };
-      }
-      return {
-        badgeText: '마감일 미지정',
-        badgeType: 'normal',
-        timeLeftText: '기한 정보 없음',
-        deadlineDate: null,
-      };
-    }
-
-    const endParts = matches[matches.length - 1];
-    const y = parseInt(endParts[1], 10);
-    const m = parseInt(endParts[2], 10) - 1;
-    const d = parseInt(endParts[3], 10);
-    const h = endParts[4] !== undefined ? parseInt(endParts[4], 10) : 23;
-    const min = endParts[5] !== undefined ? parseInt(endParts[5], 10) : 59;
-    const s = endParts[6] !== undefined ? parseInt(endParts[6], 10) : (endParts[4] !== undefined ? 0 : 59);
-    const deadline = new Date(y, m, d, h, min, s);
-
-    if (isSubmitted) {
-      return {
-        badgeText: '제출완료',
-        badgeType: 'done',
-        timeLeftText: '제출완료됨',
-        deadlineDate: deadline.toISOString(),
-      };
-    }
-
-    const now = new Date();
-    const diffMs = deadline.getTime() - now.getTime();
-    const diffHours = diffMs / (1000 * 60 * 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffMs < 0) {
-      return {
-        badgeText: '마감 지남',
-        badgeType: 'normal',
-        timeLeftText: '기한 만료',
-        deadlineDate: deadline.toISOString(),
-      };
-    }
-
-    if (diffHours < 24 && deadline.toDateString() === now.toDateString()) {
-      const diffH = Math.floor(diffHours);
-      const diffM = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      const timeStr = endParts[4] !== undefined && endParts[5] !== undefined
-        ? `오늘 ${endParts[4].padStart(2, '0')}:${endParts[5].padStart(2, '0')} 마감`
-        : '오늘 마감';
-      return {
-        badgeText: timeStr,
-        badgeType: 'urgent',
-        timeLeftText: diffH > 0 ? `${diffH}시간 ${diffM}분 남음` : `${diffM}분 남음`,
-        deadlineDate: deadline.toISOString(),
-      };
-    }
-
-    if (diffDays <= 3) {
-      return {
-        badgeText: `D-${diffDays || 1}`,
-        badgeType: 'warning',
-        timeLeftText: `약 ${Math.floor(diffHours)}시간 남음`,
-        deadlineDate: deadline.toISOString(),
-      };
-    }
-
+    const deadlineMs = parseLectureDeadline(dateStr);
     return {
-      badgeText: `D-${diffDays}`,
-      badgeType: 'normal',
-      timeLeftText: `${diffDays}일 남음`,
-      deadlineDate: deadline.toISOString(),
+      ...deadlineStatus(deadlineMs, isSubmitted),
+      deadlineDate: Number.isFinite(deadlineMs) ? new Date(deadlineMs).toISOString() : null,
     };
   }
 

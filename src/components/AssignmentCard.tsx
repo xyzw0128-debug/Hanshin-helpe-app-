@@ -1,16 +1,21 @@
 import React from 'react';
 import { AssignmentItem } from '../types';
 import { Flame } from 'lucide-react';
+import { deadlineStatus } from '../utils/date';
 
 interface AssignmentCardProps {
   item: AssignmentItem;
+  /** 지금 시각(ms, 매 분 바뀜). D-day·남은 시간을 동기화 시점이 아니라 이 값으로 계산 */
+  nowMs: number;
   onClick: () => void;
 }
 
-const AssignmentCardInner: React.FC<AssignmentCardProps> = ({ item, onClick }) => {
-  const isUrgent = item.badgeType === 'urgent';
-  const isWarning = item.badgeType === 'warning';
-  const isDone = item.badgeType === 'done';
+const AssignmentCardInner: React.FC<AssignmentCardProps> = ({ item, nowMs, onClick }) => {
+  const deadlineMs = item.deadlineDate ? new Date(item.deadlineDate).getTime() : NaN;
+  const { badgeText, badgeType, timeLeftText } = deadlineStatus(deadlineMs, item.isSubmitted, new Date(nowMs));
+  const isUrgent = badgeType === 'urgent';
+  const isWarning = badgeType === 'warning';
+  const isDone = badgeType === 'done';
 
   const badgeClass = isUrgent
     ? 'bg-red-600 text-white'
@@ -34,7 +39,7 @@ const AssignmentCardInner: React.FC<AssignmentCardProps> = ({ item, onClick }) =
       <div className="flex items-center justify-between">
         <span className={`px-2.5 py-1 text-xs font-black rounded-lg ${badgeClass} shadow-sm flex items-center gap-1`}>
           {isUrgent && <Flame className="w-3 h-3" />}
-          {item.ddayBadgeText}
+          {badgeText}
         </span>
         <span
           className={`text-xs font-bold px-2 py-0.5 rounded-md ${
@@ -54,7 +59,7 @@ const AssignmentCardInner: React.FC<AssignmentCardProps> = ({ item, onClick }) =
 
       <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-800">
         <span>
-          남은 시간: <b className={!item.isSubmitted && isUrgent ? 'text-red-600 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>{item.timeLeftText}</b>
+          남은 시간: <b className={!item.isSubmitted && isUrgent ? 'text-red-600 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'}>{timeLeftText}</b>
         </span>
         <span className="font-medium text-zinc-400">터치 시 상세 정보 ›</span>
       </div>
@@ -63,4 +68,3 @@ const AssignmentCardInner: React.FC<AssignmentCardProps> = ({ item, onClick }) =
 };
 
 export const AssignmentCard = React.memo(AssignmentCardInner);
-

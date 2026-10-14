@@ -78,6 +78,9 @@ export function useLmsSync(
   performSync: (userCfg?: UserConfig, curState?: AppStateData, options?: SyncOptions) => Promise<void>;
 } {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  // 진행 중인 동기화 수. 조용한(자동) 동기화는 이미 진행 중이면 건너뜀: 겹치면 같은 요청을 두 번 보내고,
+  // 세션이 끊긴 경우 SSO 로그인을 두 번 해서 먼저 만든 세션이 끊김("다른 PC 로그인" 오탐)
+  const activeSyncsRef = useRef(0);
   const backgroundSummaryTaskRef = useRef<number>(0);
 
   const configRef = useRef(config);
@@ -99,6 +102,11 @@ export function useLmsSync(
       return;
     }
 
+    if (silent && activeSyncsRef.current > 0) {
+      debugLog('sync', '이미 동기화 중 → 자동 동기화 건너뜀');
+      return;
+    }
+    activeSyncsRef.current++;
     setIsSyncing(true);
     const syncStartedAt = Date.now();
     debugLog('sync', 'LMS 동기화 시작', { silent, forceLogin });
@@ -408,6 +416,7 @@ export function useLmsSync(
           dept: LmsAuthService.getDeptName() || activeState.profile?.dept || '',
         },
         lastSyncTime: timeStr,
+        lastSyncAt: now.getTime(),
         courses,
         assignments: allAssignments,
         lectures: allLectures,
@@ -551,7 +560,8 @@ export function useLmsSync(
         }
       }
     } finally {
-      setIsSyncing(false);
+      activeSyncsRef.current--;
+      setIsSyncing(activeSyncsRef.current > 0);
     }
   }, [setIsSyncing, setState, setConfig, setActiveTab, showToast, onCredentialsRejected]);
 

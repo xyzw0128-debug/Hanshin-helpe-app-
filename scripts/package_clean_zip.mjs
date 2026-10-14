@@ -13,6 +13,7 @@ const targetZip = path.resolve(parentDir, 'lms-notifier-app.zip');
 console.log(`Packaging clean release archive: ${targetZip} from folder: ${folderName}`);
 
 // Completely exclude build artifacts, debug binaries, node_modules, and cache files
+// 서명 키(키스토어)·개인 설정·다른 작업 사본(.worktrees)도 넣지 않음: zip을 남에게 주면 앱 서명 키가 함께 나감
 const excludePatterns = [
   '*/node_modules/*',
   '*/.gradle/*',
@@ -20,7 +21,14 @@ const excludePatterns = [
   '*/dist/*',
   '*/tests/*',
   '*/.git/*',
+  '*/.worktrees/*',
   '*.apk',
+  '*.aab',
+  '*.keystore',
+  '*.jks',
+  '*keystore.properties',
+  '*/local.properties',
+  '*/.claude/settings.local.json',
   '*.log',
   '*.env*',
   '*~'
