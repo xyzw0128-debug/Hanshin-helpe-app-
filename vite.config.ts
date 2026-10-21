@@ -62,6 +62,20 @@ function lmsDevProxyPlugin(): Plugin {
           return next();
         }
 
+        // localhost로 연 개발 화면이 보낸 JSON 요청만 허용: 다른 사이트가 개발 중 로그인한 학교 세션을 쓰지 못하게.
+        // 이 미들웨어는 Vite의 CORS·Host 검사보다 먼저 실행되어 text/plain POST·DNS 리바인딩을 직접 막아야 함
+        const host = req.headers.host || '';
+        const origin = req.headers.origin;
+        const isLocalHost = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+        const isSameOrigin = !origin || origin === `http://${host}`;
+        const isJson = (req.headers['content-type'] || '').includes('application/json');
+        if (!isLocalHost || !isSameOrigin || !isJson) {
+          res.statusCode = 403;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: '개발 서버 화면(localhost)에서 보낸 요청만 허용합니다.' }));
+          return;
+        }
+
         let body = '';
         req.on('data', chunk => {
           body += chunk;
