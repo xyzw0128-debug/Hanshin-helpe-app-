@@ -12,4 +12,13 @@
     <string name="widget_deadlines_label">다가오는 마감</string>
     <string name="widget_deadlines_empty">다가오는 마감이 없어요</string>
     <string name="widget_deadlines_description">가장 가까운 과제·퀴즈·온라인 강의 마감 3건</string>
+    <string name="widget_deadlines_signed_out">앱에서 로그인하면 마감이 보여요</string>
+    <!-- 위젯 고르는 화면의 미리보기(widget_deadlines_preview) 예시 -->
+    <string name="widget_preview_meta">외 2건 · 14:30 확인</string>
+    <string name="widget_preview_badge_0">오늘 23:59</string>
+    <string name="widget_preview_title_0">3주차 과제 보고서 · 자료구조</string>
+    <string name="widget_preview_badge_1">D-1</string>
+    <string name="widget_preview_title_1">[강의] 6주차 온라인 강의 · 운영체제</string>
+    <string name="widget_preview_badge_2">D-4</string>
+    <string name="widget_preview_title_2">중간 퀴즈 · 데이터베이스</string>
 </resources>
