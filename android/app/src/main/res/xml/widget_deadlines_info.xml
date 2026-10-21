@@ -9,6 +9,6 @@
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/widget_deadlines"
-    android:previewLayout="@layout/widget_deadlines"
+    android:previewLayout="@layout/widget_deadlines_preview"
     android:description="@string/widget_deadlines_description"
     android:widgetCategory="home_screen" />

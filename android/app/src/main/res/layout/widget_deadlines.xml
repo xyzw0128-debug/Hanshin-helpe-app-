@@ -15,31 +15,39 @@
         android:orientation="horizontal">
 
         <TextView
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
             android:text="@string/widget_deadlines_label"
             android:textColor="@color/widget_accent"
             android:textSize="13sp"
             android:textStyle="bold" />
 
+        <!-- "외 2건 · 14:30 확인" -->
         <TextView
-            android:id="@+id/widget_count"
-            android:layout_width="wrap_content"
+            android:id="@+id/widget_meta"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:gravity="end"
+            android:maxLines="1"
             android:textColor="@color/widget_subtext"
             android:textSize="11sp" />
     </LinearLayout>
 
+    <!-- 줄 사이 간격을 margin 대신 padding으로 두어 각 줄을 누르기 쉽게 (줄마다 그 항목 상세로 이동) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
         android:orientation="vertical">
         <LinearLayout
             android:id="@+id/widget_row_0"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:visibility="gone">
@@ -86,7 +94,8 @@
             android:id="@+id/widget_row_1"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:visibility="gone">
@@ -133,7 +142,8 @@
             android:id="@+id/widget_row_2"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:visibility="gone">

@@ -36,6 +36,8 @@ export interface BackgroundSyncPluginInterface {
     enabled: boolean;
     dayBefore: boolean;
     threeHours: boolean;
+    /** 방금 학교 서버에서 받아 온 목록이면 그 시각(ms): 위젯의 "14:30 확인" 표시 */
+    checkedAt?: number;
   }): Promise<{ count: number }>;
 }
 
@@ -244,7 +246,7 @@ export async function syncNotificationPrefs(cfg: {
  */
 export async function syncNativeReminders(
   items: ReminderItem[],
-  options: { enabled: boolean; dayBefore: boolean; threeHours: boolean }
+  options: { enabled: boolean; dayBefore: boolean; threeHours: boolean; checkedAt?: number }
 ): Promise<void> {
   await BackgroundSyncPlugin.syncReminders({ items, ...options });
 }

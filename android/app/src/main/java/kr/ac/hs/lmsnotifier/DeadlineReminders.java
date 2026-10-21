@@ -39,6 +39,8 @@ public final class DeadlineReminders {
     private static final String KEY_D1 = "d1";
     private static final String KEY_H3 = "h3";
     private static final String KEY_SCHEDULED = "scheduled"; // 예약해 둔 알람 URI (다음 갱신 때 취소용)
+    // 목록을 학교 서버와 마지막으로 맞춘 시각(epoch ms): 앱 동기화 성공·백그라운드 확인 성공. 위젯에 "14:30 확인"으로 표시, 로그아웃 때 지움
+    private static final String KEY_CHECKED_AT = "checked_at";
 
     static final String ACTION_REMIND = "kr.ac.hs.lmsnotifier.DEADLINE_REMINDER";
     static final String EXTRA_ITEM_ID = "item_id";
@@ -116,13 +118,17 @@ public final class DeadlineReminders {
         prefs(context).edit().putString(KEY_ITEMS, arr.toString()).apply();
     }
 
-    /** 앱 동기화 결과로 목록 전체를 교체 (앱이 제출·수강 여부를 가장 정확히 앎) */
-    static synchronized void replaceAll(Context context, List<Item> items, boolean enabled, boolean d1, boolean h3) {
-        prefs(context).edit()
+    /**
+     * 앱 동기화 결과로 목록 전체를 교체 (앱이 제출·수강 여부를 가장 정확히 앎).
+     * checkedAt: 방금 학교 서버에서 받아 온 목록이면 그 시각, 저장해 둔 목록으로 다시 예약만 하는 경우(앱 시작·설정 변경)는 0
+     */
+    static synchronized void replaceAll(Context context, List<Item> items, boolean enabled, boolean d1, boolean h3, long checkedAt) {
+        SharedPreferences.Editor edit = prefs(context).edit()
                 .putBoolean(KEY_ENABLED, enabled)
                 .putBoolean(KEY_D1, d1)
-                .putBoolean(KEY_H3, h3)
-                .apply();
+                .putBoolean(KEY_H3, h3);
+        if (checkedAt > checkedAt(context)) edit.putLong(KEY_CHECKED_AT, checkedAt);
+        edit.apply();
         save(context, items);
         reschedule(context);
         DebugLog.log(context, "reminder", "replaceAll items=" + items.size() + " (" + countByKind(items) + ") enabled=" + enabled
@@ -136,6 +142,7 @@ public final class DeadlineReminders {
     static synchronized void applyWorkerResult(Context context, List<TodoItem> pending, Set<String> completedIds, long now) {
         MergeResult r = merge(load(context), pending, completedIds, now);
         if (r.changed()) save(context, r.next);
+        prefs(context).edit().putLong(KEY_CHECKED_AT, now).apply();
         // 바뀐 것이 없어도 다시 예약: 강제 종료·정확한 알람 권한 해제 때 시스템이 알람을 지우므로 확인할 때마다 복구
         reschedule(context);
         DebugLog.log(context, "reminder", "worker result: +" + r.added + " -" + r.removed.size() + " ~" + r.updated
@@ -206,8 +213,19 @@ public final class DeadlineReminders {
 
     /** 로그아웃: 목록과 예약을 모두 지움 */
     static synchronized void clear(Context context) {
+        prefs(context).edit().remove(KEY_CHECKED_AT).apply();
         save(context, new ArrayList<>());
         reschedule(context);
+    }
+
+    /** 목록을 학교 서버와 마지막으로 맞춘 시각 (아직 없거나 로그아웃 뒤면 0) */
+    static long checkedAt(Context context) {
+        return prefs(context).getLong(KEY_CHECKED_AT, 0L);
+    }
+
+    /** 항목을 열 화면 (알림·위젯을 눌렀을 때): 온라인 강의는 강의 목록, 과제·퀴즈는 과제 목록 */
+    static String openTarget(Item it) {
+        return KIND_LECTURE.equals(it.kind) ? "lms:lectures" : "lms:assignments";
     }
 
     /** 다가오는 마감 (위젯용): 마감이 지나지 않은 항목을 마감 순으로 */
@@ -343,8 +361,7 @@ public final class DeadlineReminders {
         String body = item.title + (item.deadlineStr == null || item.deadlineStr.isEmpty() ? "" : "\n기한: " + item.deadlineStr);
 
         int notifId = (itemId + "|" + slot).hashCode() & 0x7FFFFFFF;
-        String target = lecture ? "lms:lectures" : "lms:assignments";
-        post(context, CHANNEL_ID, CHANNEL_NAME, "과제·퀴즈·온라인 강의 마감 전 알림", notifId, title, body, target, itemId);
+        post(context, CHANNEL_ID, CHANNEL_NAME, "과제·퀴즈·온라인 강의 마감 전 알림", notifId, title, body, openTarget(item), itemId);
         DebugLog.log(context, "reminder", "fired " + slot + " for " + item.kind);
     }
 

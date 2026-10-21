@@ -216,6 +216,7 @@ public class BackgroundSyncPlugin extends Plugin {
     /**
      * 마감 알림 목록 전체 교체 (앱 동기화 결과). 워커는 이 목록을 이어서 고침 → DeadlineReminders
      * items: [{ id, kind: assignment|quiz|lecture, courseNm, title, deadlineStr, deadlineMs }]
+     * checkedAt: 방금 학교 서버에서 받아 온 목록이면 그 시각(ms, 위젯의 "확인" 시각), 저장된 목록으로 다시 예약만 하면 생략
      */
     @PluginMethod
     public void syncReminders(PluginCall call) {
@@ -229,8 +230,10 @@ public class BackgroundSyncPlugin extends Plugin {
                 if (!it.id.isEmpty() && it.deadlineMs > 0) items.add(it);
             }
         }
+        // 밀리초 시각은 JSON에서 Long으로 와서 getDouble/getInt로 읽히지 않음
+        long checkedAt = call.getData().optLong("checkedAt", 0L);
         DeadlineReminders.replaceAll(getContext(), items,
-                call.getBoolean("enabled", true), call.getBoolean("dayBefore", true), call.getBoolean("threeHours", true));
+                call.getBoolean("enabled", true), call.getBoolean("dayBefore", true), call.getBoolean("threeHours", true), checkedAt);
         JSObject ret = new JSObject();
         ret.put("count", items.size());
         call.resolve(ret);

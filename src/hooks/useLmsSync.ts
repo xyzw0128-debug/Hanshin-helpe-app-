@@ -36,17 +36,20 @@ const LEGACY_REMINDERS_CLEARED_KEY = 'hs_legacy_reminders_cleared';
 /**
  * 마감 하루 전·3시간 전 알림 갱신 (과제·퀴즈·온라인 강의).
  * 네이티브(DeadlineReminders)가 화면이 꺼져 있어도 울리는 알람으로 예약하고, 백그라운드 확인이 제출·수강 완료를 반영한다.
+ * checkedAt: 방금 동기화로 받아 온 목록일 때만 넘김 (홈 화면 위젯의 확인 시각). 저장된 목록으로 다시 예약할 때는 생략
  */
 export async function syncDeadlineReminders(
   assignments: AssignmentItem[],
   lectures: LectureItem[],
-  cfg: UserConfig
+  cfg: UserConfig,
+  checkedAt?: number
 ): Promise<void> {
   const items = buildReminderItems(assignments, lectures);
   await syncNativeReminders(items, {
     enabled: cfg.pushNotificationsEnabled !== false,
     dayBefore: cfg.ddayReminderEnabled !== false,
     threeHours: cfg.threeHourReminderEnabled !== false,
+    checkedAt,
   });
   // 1.2.0까지는 알림 라이브러리로 예약했음(화면이 꺼져 있으면 늦게 울림) → 남아 있는 예약을 한 번 지움
   if (Capacitor.isNativePlatform() && !localStorage.getItem(LEGACY_REMINDERS_CLEARED_KEY)) {
@@ -449,7 +452,7 @@ export function useLmsSync(
         ...allNotices.map(n => n.id),
       ]);
       saveLmsSession();
-      syncDeadlineReminders(allAssignments, allLectures, activeCfg).catch(e => console.warn('Reminder sync failed', e));
+      syncDeadlineReminders(allAssignments, allLectures, activeCfg, Date.now()).catch(e => console.warn('Reminder sync failed', e));
 
       // 4. 백그라운드 비동기 AI 공지 요약 (UI 차단 없음)
       const apiKeyToUse = activeCfg.useGeminiSummary !== false ? activeCfg.geminiApiKey : '';
