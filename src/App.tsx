@@ -15,6 +15,7 @@ import { consumeOpenTarget, openExternal, OpenTarget } from './services/appShell
 import { setRootBack, useBackHandler } from './services/backNav';
 import { checkForUpdate, dismissUpdate, isUpdateDismissed, UpdateInfo } from './services/updateCheck';
 import { usePullToRefresh, PULL_TRIGGER_PX } from './hooks/usePullToRefresh';
+import { useSwipeTabs } from './hooks/useSwipeTabs';
 import { initDebugLog, debugLog } from './services/debugLog';
 import { applyReleasePolicy } from './services/buildPolicy';
 import { canRelogin, isSyncPaused, onSyncPausedChange, resumeSync } from './services/sessionGuard';
@@ -24,8 +25,8 @@ import { nextNavHistory, sameView, ViewState } from './utils/navHistory';
 import { DetailBottomSheet } from './components/DetailBottomSheet';
 import type { AcademicSection } from './components/AcademicView';
 import { HomeView, HomeHeader, HomeNavigateTarget } from './components/HomeView';
-import { LmsView, LmsHeader, LmsSubTab } from './components/LmsView';
-import { AcademicHeader } from './components/AcademicHeader';
+import { LmsView, LmsHeader, LmsSubTab, LMS_SUB_TABS } from './components/LmsView';
+import { AcademicHeader, ACADEMIC_SECTIONS, hasAcademicData } from './components/AcademicHeader';
 import { HeaderTitleRow } from './components/TabHeader';
 import { MenuView, MenuSubpage } from './components/MenuView';
 import { SubpageLayout } from './components/SubpageLayout';
@@ -588,6 +589,22 @@ export const App: React.FC = () => {
     onRefresh: () => performSync(),
   });
 
+  // ---------- 본문을 좌우로 밀어 하위 탭 넘기기 (LMS·학사) ----------
+  // 위쪽 하위 탭을 일일이 누르지 않아도 되게. 하단 탭(홈·LMS·학사·전체메뉴)은 넘기지 않음
+  const pageRef = useRef<HTMLDivElement>(null);
+  useSwipeTabs(contentRef, pageRef, {
+    tabs: !loggedIn
+      ? null
+      : activeTab === 'lms'
+      ? LMS_SUB_TABS.map(t => t.id)
+      : activeTab === 'academics' && hasAcademicData(state.academicData)
+      ? ACADEMIC_SECTIONS.map(t => t.id)
+      : null,
+    active: activeTab === 'lms' ? lmsSubTab : academicSection,
+    onChange: id =>
+      goTo(activeTab === 'lms' ? { lmsSub: id as LmsSubTab } : { academic: id as AcademicSection }),
+  });
+
   // 본문이 상단 바 아래로 밀려 올라갔으면 상단 바에 그림자. 화면(탭·하위 탭)을 바꾸면 본문을 맨 위부터 보여 줌
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -733,7 +750,7 @@ export const App: React.FC = () => {
       <div
         ref={contentRef}
         onScroll={e => setScrolled(e.currentTarget.scrollTop > 0)}
-        className="flex-1 overflow-y-auto no-scrollbar p-4 pb-24"
+        className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar p-4 pb-24"
       >
         {/* 당겨서 새로고침 표시 */}
         {pullDistance > 0 && (
@@ -793,6 +810,8 @@ export const App: React.FC = () => {
             </button>
           </div>
         )}
+        {/* 좌우로 밀 때 손가락을 따라 움직이는 부분 (위 안내 상자는 제자리) */}
+        <div ref={pageRef}>
         {activeTab === 'home' && (
           <HomeView
             state={state}
@@ -833,6 +852,7 @@ export const App: React.FC = () => {
         {activeTab === 'menu' && (
           <MenuView profile={profile} onOpenSubpage={openSubpage} onNavigate={navigate} onLogout={handleLogout} />
         )}
+        </div>
       </div>
 
       {/* 하위 화면 (설정 · 홈 편집 · 앱 정보) */}

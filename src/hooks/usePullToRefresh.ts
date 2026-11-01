@@ -1,4 +1,5 @@
 import { RefObject, useEffect, useRef, useState } from 'react';
+import { GESTURE_LOCK_PX } from './useSwipeTabs';
 
 /** 이만큼(px) 당긴 뒤 놓으면 새로고침 */
 export const PULL_TRIGGER_PX = 64;
@@ -37,6 +38,8 @@ export function usePullToRefresh(
       if (!tracking) return;
       const dx = e.touches[0].clientX - startX;
       const dy = e.touches[0].clientY - startY;
+      // 가로·세로가 정해질 때까지 기다림 (가로로 밀면 하위 탭 넘기기: hooks/useSwipeTabs.ts)
+      if (current === 0 && Math.max(Math.abs(dx), Math.abs(dy)) < GESTURE_LOCK_PX) return;
       if (el.scrollTop > 0 || (current === 0 && Math.abs(dx) > Math.abs(dy))) {
         tracking = false;
         current = 0;

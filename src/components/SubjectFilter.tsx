@@ -43,8 +43,9 @@ const SubjectFilterInner: React.FC<SubjectFilterProps> = ({ subjects, selectedSu
       </button>
 
       {open && (
-        // 창 안에서 목록을 위로 끌어도 당겨서 새로고침이 되지 않게 (hooks/usePullToRefresh.ts)
-        <div data-no-pull-refresh className="contents">
+        // 창 안에서 목록을 위로 끌거나 옆으로 밀어도 당겨서 새로고침·하위 탭 넘기기가 되지 않게
+        // (hooks/usePullToRefresh.ts, hooks/useSwipeTabs.ts)
+        <div data-no-pull-refresh data-no-tab-swipe className="contents">
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
           <div
             role="listbox"

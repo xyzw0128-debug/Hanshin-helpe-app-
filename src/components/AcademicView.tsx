@@ -43,6 +43,17 @@ export const AcademicView: React.FC<AcademicViewProps> = ({
   const activeSection = section;
   const [gradesRevealed, setGradesRevealed] = useState(false);
   const gradesHidden = hideGrades !== false && !gradesRevealed;
+  // 펼친 성적은 성적 탭을 떠나거나(다른 하위 탭) 앱을 벗어나면 다시 가림
+  useEffect(() => {
+    if (section !== 'grades') setGradesRevealed(false);
+  }, [section]);
+  useEffect(() => {
+    const onHidden = () => {
+      if (document.hidden) setGradesRevealed(false);
+    };
+    document.addEventListener('visibilitychange', onHidden);
+    return () => document.removeEventListener('visibilitychange', onHidden);
+  }, []);
   const [timetableViewMode, setTimetableViewMode] = useState<'grid' | 'daily'>('grid');
   const [expandedSemester, setExpandedSemester] = useState<string | null>(() => {
     return academicData?.gradeSummary?.semesters[0]
@@ -803,9 +814,10 @@ export const AcademicView: React.FC<AcademicViewProps> = ({
         </div>
       )}
 
-      {/* 강의 상세 모달 다이얼로그 */}
+      {/* 강의 상세 모달 다이얼로그 (창 위에서 옆으로 밀어도 하위 탭이 넘어가지 않게) */}
       {selectedModalClass && (
         <div
+          data-no-tab-swipe
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
           onClick={() => setSelectedModalClass(null)}
         >

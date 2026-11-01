@@ -65,7 +65,7 @@ const PastSection: React.FC<{ count: number; forceOpen?: boolean; children: Reac
   );
 };
 
-const SUB_TABS: Array<{ id: LmsSubTab; label: string }> = [
+export const LMS_SUB_TABS: Array<{ id: LmsSubTab; label: string }> = [
   { id: 'assignments', label: '과제·퀴즈' },
   { id: 'lectures', label: '온라인 강의' },
   { id: 'notices', label: '공지' },
@@ -136,7 +136,7 @@ export const LmsHeader: React.FC<{
         </HeaderTitleRow>
       )}
       <HeaderTabs
-        tabs={SUB_TABS.map(t => ({ ...t, badge: badgeFor(t.id) }))}
+        tabs={LMS_SUB_TABS.map(t => ({ ...t, badge: badgeFor(t.id) }))}
         active={subTab}
         onChange={onSubTabChange}
       />
@@ -200,7 +200,7 @@ export const LmsView: React.FC<LmsViewProps> = ({
       {/* 검색 중: 하위 탭별 결과 수 */}
       {q && (
         <div className="flex flex-wrap gap-1.5 px-0.5">
-          {SUB_TABS.map(t => (
+          {LMS_SUB_TABS.map(t => (
             <button
               key={t.id}
               onClick={() => changeSubTab(t.id)}
